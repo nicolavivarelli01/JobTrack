@@ -11,7 +11,9 @@ A personal job-search dashboard for tracking applications, employer responses, i
 - Current-outcome breakdown
 - Searchable and filterable application table
 - Add, edit, and delete workflows
+- Private notes for recruiter details, next steps, and reminders
 - Email/password authentication
+- Email-based password recovery
 - Supabase Postgres persistence across devices
 - Row-level security so each account can access only its own applications
 - One-time import of existing non-demo browser data

@@ -77,10 +77,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { Toaster } from "@/components/ui/sonner";
 import {
   AuthScreen,
   LoadingScreen,
+  PasswordRecoveryScreen,
   SetupScreen,
 } from "@/components/auth-screen";
 import {
@@ -123,6 +125,7 @@ type Application = {
   source?: string;
   location?: string;
   jobUrl?: string;
+  notes?: string;
 };
 
 type ApplicationDraft = Omit<Application, "id">;
@@ -143,6 +146,7 @@ type ApplicationRow = {
   source: string | null;
   location: string | null;
   job_url: string | null;
+  notes: string | null;
   legacy_id: string | null;
 };
 
@@ -195,6 +199,7 @@ function applicationFromRow(row: ApplicationRow): Application {
     source: row.source ?? undefined,
     location: row.location ?? undefined,
     jobUrl: row.job_url ?? undefined,
+    notes: row.notes ?? undefined,
   };
 }
 
@@ -209,6 +214,7 @@ function databaseFields(draft: ApplicationDraft) {
     source: draft.source || null,
     location: draft.location || null,
     job_url: draft.jobUrl || null,
+    notes: draft.notes || null,
   };
 }
 
@@ -467,6 +473,7 @@ function ApplicationDialog({
     source: "",
     location: "",
     jobUrl: "",
+    notes: "",
   };
 
   const [draft, setDraft] = useState<ApplicationDraft>(() =>
@@ -481,6 +488,7 @@ function ApplicationDialog({
           source: application.source,
           location: application.location,
           jobUrl: application.jobUrl,
+          notes: application.notes,
         }
       : emptyDraft,
   );
@@ -535,6 +543,7 @@ function ApplicationDialog({
         source: draft.source?.trim(),
         location: draft.location?.trim(),
         jobUrl: draft.jobUrl?.trim(),
+        notes: draft.notes?.trim(),
         responseAt: hasResponse
           ? draft.responseAt || todayInputValue()
           : undefined,
@@ -659,6 +668,17 @@ function ApplicationDialog({
                 placeholder="https://…"
               />
             </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                value={draft.notes ?? ""}
+                onChange={(event) => updateField("notes", event.target.value)}
+                placeholder="Recruiter name, next steps, salary range, or anything worth remembering…"
+                className="min-h-28 resize-y"
+                maxLength={5000}
+              />
+            </div>
           </div>
 
           <DialogFooter className="border-t border-white/[0.07] px-6 py-4">
@@ -764,7 +784,7 @@ function Dashboard({
         const { data, error } = await supabase
           .from("applications")
           .select(
-            "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,legacy_id",
+            "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,legacy_id",
           )
           .order("applied_at", { ascending: false });
 
@@ -864,6 +884,7 @@ function Dashboard({
             application.role,
             application.location,
             application.source,
+            application.notes,
           ]
             .filter(Boolean)
             .some((value) => value?.toLowerCase().includes(normalizedSearch));
@@ -907,7 +928,7 @@ function Dashboard({
           .update(databaseFields(draft))
           .eq("id", id)
           .select(
-            "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,legacy_id",
+            "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,legacy_id",
           )
           .single();
 
@@ -926,7 +947,7 @@ function Dashboard({
         .from("applications")
         .insert({ user_id: user.id, ...databaseFields(draft) })
         .select(
-          "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,legacy_id",
+          "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,legacy_id",
         )
         .single();
 
@@ -954,7 +975,7 @@ function Dashboard({
         ...databaseFields(application),
       })
       .select(
-        "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,legacy_id",
+        "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,legacy_id",
       )
       .single();
 
@@ -1473,6 +1494,11 @@ function Dashboard({
                             {application.role}
                             {application.location ? ` · ${application.location}` : ""}
                           </p>
+                          {application.notes && (
+                            <p className="mt-2 line-clamp-2 max-w-xl text-sm leading-5 text-[#7f93a6]">
+                              {application.notes}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </TableCell>
@@ -1558,6 +1584,7 @@ export default function Home() {
   const supabase = getSupabaseClient();
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1571,8 +1598,10 @@ export default function Home() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
+      if (event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
+      if (event === "SIGNED_OUT") setPasswordRecovery(false);
       setSession(nextSession);
       setAuthReady(true);
     });
@@ -1588,6 +1617,13 @@ export default function Home() {
     content = <SetupScreen />;
   } else if (!authReady) {
     content = <LoadingScreen />;
+  } else if (passwordRecovery && session) {
+    content = (
+      <PasswordRecoveryScreen
+        supabase={supabase}
+        onComplete={() => setPasswordRecovery(false)}
+      />
+    );
   } else if (!session) {
     content = <AuthScreen supabase={supabase} />;
   } else {

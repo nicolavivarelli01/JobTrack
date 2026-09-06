@@ -9,11 +9,14 @@ import {
   Loader2,
   LockKeyhole,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+type AuthMode = "sign-in" | "sign-up" | "forgot-password";
 
 function AuthShell({ children }: { children: React.ReactNode }) {
   return (
@@ -70,7 +73,7 @@ export function SetupScreen() {
 }
 
 export function AuthScreen({ supabase }: { supabase: SupabaseClient }) {
-  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [mode, setMode] = useState<AuthMode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -84,7 +87,16 @@ export function AuthScreen({ supabase }: { supabase: SupabaseClient }) {
     setNotice(null);
 
     try {
-      if (mode === "sign-in") {
+      if (mode === "forgot-password") {
+        const { error: resetError } =
+          await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: window.location.origin,
+          });
+        if (resetError) throw resetError;
+        setNotice(
+          "If an account exists for this email, a reset link is on its way.",
+        );
+      } else if (mode === "sign-in") {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
@@ -112,11 +124,30 @@ export function AuthScreen({ supabase }: { supabase: SupabaseClient }) {
     }
   }
 
-  function changeMode() {
-    setMode((current) => (current === "sign-in" ? "sign-up" : "sign-in"));
+  function changeMode(nextMode: AuthMode) {
+    setMode(nextMode);
     setError(null);
     setNotice(null);
   }
+
+  const title =
+    mode === "sign-in"
+      ? "Welcome back"
+      : mode === "sign-up"
+        ? "Create your account"
+        : "Reset your password";
+  const description =
+    mode === "sign-in"
+      ? "Sign in to open your application dashboard."
+      : mode === "sign-up"
+        ? "Your applications will be private to this account."
+        : "Enter your email and we’ll send you a secure reset link.";
+  const submitLabel =
+    mode === "sign-in"
+      ? "Sign in"
+      : mode === "sign-up"
+        ? "Create account"
+        : "Send reset link";
 
   return (
     <AuthShell>
@@ -133,12 +164,10 @@ export function AuthScreen({ supabase }: { supabase: SupabaseClient }) {
           </div>
 
           <h1 className="mt-6 text-2xl font-semibold tracking-[-0.04em]">
-            {mode === "sign-in" ? "Welcome back" : "Create your account"}
+            {title}
           </h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            {mode === "sign-in"
-              ? "Sign in to open your application dashboard."
-              : "Your applications will be private to this account."}
+            {description}
           </p>
 
           <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
@@ -155,19 +184,34 @@ export function AuthScreen({ supabase }: { supabase: SupabaseClient }) {
                 autoFocus
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="auth-password">Password</Label>
-              <Input
-                id="auth-password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="At least 8 characters"
-                autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
-                minLength={8}
-                required
-              />
-            </div>
+            {mode !== "forgot-password" && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="auth-password">Password</Label>
+                  {mode === "sign-in" && (
+                    <button
+                      type="button"
+                      className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      onClick={() => changeMode("forgot-password")}
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+                </div>
+                <Input
+                  id="auth-password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="At least 8 characters"
+                  autoComplete={
+                    mode === "sign-in" ? "current-password" : "new-password"
+                  }
+                  minLength={8}
+                  required
+                />
+              </div>
+            )}
 
             {error && (
               <p className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-sm text-[#ffadb2]">
@@ -186,20 +230,133 @@ export function AuthScreen({ supabase }: { supabase: SupabaseClient }) {
               ) : (
                 <ArrowRight aria-hidden="true" />
               )}
-              {mode === "sign-in" ? "Sign in" : "Create account"}
+              {submitLabel}
             </Button>
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            {mode === "sign-in" ? "First time here?" : "Already have an account?"}{" "}
+            {mode === "sign-in"
+              ? "First time here?"
+              : mode === "sign-up"
+                ? "Already have an account?"
+                : "Remembered your password?"}{" "}
             <button
               type="button"
               className="font-medium text-primary underline-offset-4 hover:underline"
-              onClick={changeMode}
+              onClick={() =>
+                changeMode(mode === "sign-in" ? "sign-up" : "sign-in")
+              }
             >
               {mode === "sign-in" ? "Create an account" : "Sign in"}
             </button>
           </p>
+        </CardContent>
+      </Card>
+    </AuthShell>
+  );
+}
+
+export function PasswordRecoveryScreen({
+  supabase,
+  onComplete,
+}: {
+  supabase: SupabaseClient;
+  onComplete: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+
+    if (password !== confirmation) {
+      setError("The passwords do not match.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({
+        password,
+      });
+      if (updateError) throw updateError;
+
+      window.history.replaceState(null, "", window.location.pathname);
+      toast.success("Password updated");
+      onComplete();
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Your password could not be updated. Please request a new link.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <AuthShell>
+      <Card className="gap-0 border-white/[0.08] bg-card/90 py-0 shadow-[0_24px_70px_rgba(0,0,0,.28)]">
+        <CardContent className="px-6 py-7 sm:px-8 sm:py-8">
+          <div className="flex size-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+            <LockKeyhole className="size-5" aria-hidden="true" />
+          </div>
+
+          <h1 className="mt-6 text-2xl font-semibold tracking-[-0.04em]">
+            Choose a new password
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Your applications and notes will stay connected to this account.
+          </p>
+
+          <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New password</Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="At least 8 characters"
+                autoComplete="new-password"
+                minLength={8}
+                required
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirm new password</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                placeholder="Enter it again"
+                autoComplete="new-password"
+                minLength={8}
+                required
+              />
+            </div>
+
+            {error && (
+              <p className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-sm text-[#ffadb2]">
+                {error}
+              </p>
+            )}
+
+            <Button className="w-full" type="submit" disabled={submitting}>
+              {submitting ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : (
+                <ArrowRight aria-hidden="true" />
+              )}
+              Save new password
+            </Button>
+          </form>
         </CardContent>
       </Card>
     </AuthShell>
