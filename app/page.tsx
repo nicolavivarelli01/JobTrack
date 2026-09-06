@@ -1290,7 +1290,7 @@ function Dashboard({
             </div>
             <div>
               <p className="text-base font-semibold tracking-[-0.025em]">JobTrack</p>
-              <p className="text-xs text-muted-foreground">Nick&apos;s job search</p>
+              <p className="text-xs text-muted-foreground">Your job search path starts here.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
