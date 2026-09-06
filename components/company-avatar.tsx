@@ -29,6 +29,12 @@ const hiringPlatformDomains = [
   "brassring.com",
   "workable.com",
   "recruitee.com",
+  "powerappsportals.com",
+  "microsoftcrmportals.com",
+  "dynamics.com",
+  "dynamics365.com",
+  "sharepoint.com",
+  "azurewebsites.net",
 ] as const;
 
 function isHiringPlatform(hostname: string) {
