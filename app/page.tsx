@@ -1,14 +1,19 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
 import {
   Activity,
+  AlertCircle,
   ArrowRight,
   BriefcaseBusiness,
   CalendarDays,
   Check,
   CircleDot,
+  Cloud,
   ExternalLink,
+  Loader2,
+  LogOut,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -16,7 +21,6 @@ import {
   Target,
   Trash2,
   TrendingUp,
-  X,
 } from "lucide-react";
 import {
   Area,
@@ -74,6 +78,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Toaster } from "@/components/ui/sonner";
+import {
+  AuthScreen,
+  LoadingScreen,
+  SetupScreen,
+} from "@/components/auth-screen";
+import {
+  getSupabaseClient,
+  isSupabaseConfigured,
+} from "@/lib/supabase";
 
 const stages = [
   "Applied",
@@ -103,138 +116,22 @@ type Application = {
 
 type ApplicationDraft = Omit<Application, "id">;
 
-const storageKey = "jobtrack.applications.v1";
+type ApplicationRow = {
+  id: string;
+  user_id: string;
+  company: string;
+  role: string;
+  stage: Stage;
+  outcome: Outcome;
+  applied_at: string;
+  response_at: string | null;
+  source: string | null;
+  location: string | null;
+  job_url: string | null;
+  legacy_id: string | null;
+};
 
-const seedApplications: Application[] = [
-  {
-    id: "demo-1",
-    company: "Northstar Health",
-    role: "Machine Learning Engineer",
-    stage: "Interview",
-    outcome: "Active",
-    appliedAt: "2026-08-04",
-    responseAt: "2026-08-09",
-    source: "Company site",
-    location: "Chicago, IL",
-  },
-  {
-    id: "demo-2",
-    company: "Helix AI",
-    role: "Applied AI Engineer",
-    stage: "Assessment",
-    outcome: "Active",
-    appliedAt: "2026-08-10",
-    responseAt: "2026-08-13",
-    source: "LinkedIn",
-    location: "Remote",
-  },
-  {
-    id: "demo-3",
-    company: "Atlas Care",
-    role: "Data Scientist",
-    stage: "Applied",
-    outcome: "Rejected",
-    appliedAt: "2026-08-11",
-    responseAt: "2026-08-19",
-    source: "Handshake",
-    location: "Boston, MA",
-  },
-  {
-    id: "demo-4",
-    company: "Layer Systems",
-    role: "NLP Engineer",
-    stage: "Recruiter screen",
-    outcome: "Rejected",
-    appliedAt: "2026-08-15",
-    responseAt: "2026-08-21",
-    source: "Referral",
-    location: "New York, NY",
-  },
-  {
-    id: "demo-5",
-    company: "Mosaic Health",
-    role: "Machine Learning Scientist",
-    stage: "Applied",
-    outcome: "Active",
-    appliedAt: "2026-08-18",
-    source: "Company site",
-    location: "Remote",
-  },
-  {
-    id: "demo-6",
-    company: "Cobalt Labs",
-    role: "Software Engineer, AI",
-    stage: "Assessment",
-    outcome: "Rejected",
-    appliedAt: "2026-08-21",
-    responseAt: "2026-08-25",
-    source: "LinkedIn",
-    location: "Seattle, WA",
-  },
-  {
-    id: "demo-7",
-    company: "Orbit Bio",
-    role: "Research Engineer",
-    stage: "Recruiter screen",
-    outcome: "Active",
-    appliedAt: "2026-08-24",
-    responseAt: "2026-08-30",
-    source: "University network",
-    location: "San Francisco, CA",
-  },
-  {
-    id: "demo-8",
-    company: "Juniper Data",
-    role: "AI Platform Engineer",
-    stage: "Applied",
-    outcome: "Active",
-    appliedAt: "2026-08-26",
-    source: "Company site",
-    location: "Austin, TX",
-  },
-  {
-    id: "demo-9",
-    company: "Signal Works",
-    role: "ML Infrastructure Engineer",
-    stage: "Interview",
-    outcome: "Rejected",
-    appliedAt: "2026-08-28",
-    responseAt: "2026-08-31",
-    source: "Referral",
-    location: "Remote",
-  },
-  {
-    id: "demo-10",
-    company: "Veridian",
-    role: "Applied Scientist",
-    stage: "Offer",
-    outcome: "Offer",
-    appliedAt: "2026-08-29",
-    responseAt: "2026-09-01",
-    source: "LinkedIn",
-    location: "Chicago, IL",
-  },
-  {
-    id: "demo-11",
-    company: "Kite Systems",
-    role: "Backend Engineer, ML",
-    stage: "Applied",
-    outcome: "Active",
-    appliedAt: "2026-09-01",
-    source: "Company site",
-    location: "Remote",
-  },
-  {
-    id: "demo-12",
-    company: "Mercury AI",
-    role: "Machine Learning Engineer",
-    stage: "Applied",
-    outcome: "Active",
-    appliedAt: "2026-09-03",
-    source: "LinkedIn",
-    location: "New York, NY",
-  },
-];
+const storageKey = "jobtrack.applications.v1";
 
 const activityConfig = {
   applications: {
@@ -261,6 +158,62 @@ const stageRank: Record<Stage, number> = {
   Interview: 3,
   Offer: 4,
 };
+
+function applicationFromRow(row: ApplicationRow): Application {
+  return {
+    id: row.id,
+    company: row.company,
+    role: row.role,
+    stage: row.stage,
+    outcome: row.outcome,
+    appliedAt: row.applied_at,
+    responseAt: row.response_at ?? undefined,
+    source: row.source ?? undefined,
+    location: row.location ?? undefined,
+    jobUrl: row.job_url ?? undefined,
+  };
+}
+
+function databaseFields(draft: ApplicationDraft) {
+  return {
+    company: draft.company,
+    role: draft.role,
+    stage: draft.stage,
+    outcome: draft.outcome,
+    applied_at: draft.appliedAt,
+    response_at: draft.responseAt || null,
+    source: draft.source || null,
+    location: draft.location || null,
+    job_url: draft.jobUrl || null,
+  };
+}
+
+function isStoredApplication(value: unknown): value is Application {
+  if (!value || typeof value !== "object") return false;
+
+  const application = value as Partial<Application>;
+  return (
+    typeof application.id === "string" &&
+    typeof application.company === "string" &&
+    typeof application.role === "string" &&
+    typeof application.appliedAt === "string" &&
+    stages.includes(application.stage as Stage) &&
+    outcomes.includes(application.outcome as Outcome)
+  );
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return fallback;
+}
 
 function parseLocalDate(value: string) {
   return new Date(`${value}T12:00:00`);
@@ -441,7 +394,7 @@ function ApplicationDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   application: Application | null;
-  onSave: (draft: ApplicationDraft, id?: string) => void;
+  onSave: (draft: ApplicationDraft, id?: string) => Promise<boolean>;
 }) {
   const emptyDraft: ApplicationDraft = {
     company: "",
@@ -455,14 +408,22 @@ function ApplicationDialog({
     jobUrl: "",
   };
 
-  const [draft, setDraft] = useState<ApplicationDraft>(emptyDraft);
-
-  useEffect(() => {
-    if (!open) return;
-    setDraft(application ? { ...application } : emptyDraft);
-    // The dialog should reset only when it opens or the selected row changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, application]);
+  const [draft, setDraft] = useState<ApplicationDraft>(() =>
+    application
+      ? {
+          company: application.company,
+          role: application.role,
+          stage: application.stage,
+          outcome: application.outcome,
+          appliedAt: application.appliedAt,
+          responseAt: application.responseAt,
+          source: application.source,
+          location: application.location,
+          jobUrl: application.jobUrl,
+        }
+      : emptyDraft,
+  );
+  const [submitting, setSubmitting] = useState(false);
 
   function updateField<K extends keyof ApplicationDraft>(
     key: K,
@@ -495,7 +456,7 @@ function ApplicationDialog({
     }));
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft.company.trim() || !draft.role.trim() || !draft.appliedAt) return;
 
@@ -504,7 +465,8 @@ function ApplicationDialog({
       draft.outcome === "Rejected" ||
       draft.outcome === "Offer";
 
-    onSave(
+    setSubmitting(true);
+    const saved = await onSave(
       {
         ...draft,
         company: draft.company.trim(),
@@ -518,7 +480,8 @@ function ApplicationDialog({
       },
       application?.id,
     );
-    onOpenChange(false);
+    setSubmitting(false);
+    if (saved) onOpenChange(false);
   }
 
   return (
@@ -642,11 +605,16 @@ function ApplicationDialog({
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
+              disabled={submitting}
             >
               Cancel
             </Button>
-            <Button type="submit">
-              <Check aria-hidden="true" />
+            <Button type="submit" disabled={submitting}>
+              {submitting ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Check aria-hidden="true" />
+              )}
               {application ? "Save changes" : "Add application"}
             </Button>
           </DialogFooter>
@@ -656,10 +624,19 @@ function ApplicationDialog({
   );
 }
 
-export default function Home() {
-  const [applications, setApplications] =
-    useState<Application[]>(seedApplications);
-  const [storageReady, setStorageReady] = useState(false);
+function Dashboard({
+  supabase,
+  user,
+  onSignOut,
+}: {
+  supabase: SupabaseClient;
+  user: User;
+  onSignOut: () => Promise<void>;
+}) {
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -667,24 +644,90 @@ export default function Home() {
     useState<Application | null>(null);
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(storageKey);
-      if (saved) setApplications(JSON.parse(saved) as Application[]);
-    } catch {
-      toast.error("Saved applications could not be loaded.");
-    } finally {
-      setStorageReady(true);
+    let cancelled = false;
+
+    async function loadApplications() {
+      setDataLoading(true);
+      setDataError(null);
+
+      try {
+        const migrationKey = `jobtrack.local-migrated.${user.id}`;
+        const migrationComplete = window.localStorage.getItem(migrationKey);
+
+        if (!migrationComplete) {
+          const saved = window.localStorage.getItem(storageKey);
+          let storedApplications: Application[] = [];
+
+          if (saved) {
+            try {
+              const parsed: unknown = JSON.parse(saved);
+              storedApplications = Array.isArray(parsed)
+                ? parsed.filter(isStoredApplication)
+                : [];
+            } catch {
+              // Ignore malformed legacy browser data and continue with Supabase.
+            }
+          }
+          const applicationsToImport = storedApplications.filter(
+            (application) => !application.id.startsWith("demo-"),
+          );
+
+          if (applicationsToImport.length > 0) {
+            const { error: importError } = await supabase
+              .from("applications")
+              .upsert(
+                applicationsToImport.map((application) => ({
+                  user_id: user.id,
+                  legacy_id: application.id,
+                  ...databaseFields(application),
+                })),
+                {
+                  onConflict: "user_id,legacy_id",
+                  ignoreDuplicates: true,
+                },
+              );
+
+            if (importError) throw importError;
+            toast.success(
+              `${applicationsToImport.length} saved application${applicationsToImport.length === 1 ? "" : "s"} imported`,
+            );
+          }
+
+          window.localStorage.setItem(migrationKey, "true");
+        }
+
+        const { data, error } = await supabase
+          .from("applications")
+          .select(
+            "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,legacy_id",
+          )
+          .order("applied_at", { ascending: false });
+
+        if (error) throw error;
+        if (!cancelled) {
+          setApplications(
+            ((data ?? []) as ApplicationRow[]).map(applicationFromRow),
+          );
+        }
+      } catch (caughtError) {
+        if (!cancelled) {
+          setDataError(
+            errorMessage(
+              caughtError,
+              "Your applications could not be loaded.",
+            ),
+          );
+        }
+      } finally {
+        if (!cancelled) setDataLoading(false);
+      }
     }
-  }, []);
 
-  useEffect(() => {
-    if (!storageReady) return;
-    window.localStorage.setItem(storageKey, JSON.stringify(applications));
-  }, [applications, storageReady]);
-
-  const isDemoData =
-    applications.length > 0 &&
-    applications.every((application) => application.id.startsWith("demo-"));
+    void loadApplications();
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadToken, supabase, user.id]);
 
   const metrics = useMemo(() => {
     const responses = applications.filter(
@@ -787,54 +830,125 @@ export default function Home() {
     setDialogOpen(true);
   }
 
-  function saveApplication(draft: ApplicationDraft, id?: string) {
-    if (id) {
-      setApplications((current) =>
-        current.map((application) =>
-          application.id === id ? { ...draft, id } : application,
-        ),
-      );
-      toast.success("Application updated");
+  async function saveApplication(
+    draft: ApplicationDraft,
+    id?: string,
+  ): Promise<boolean> {
+    try {
+      if (id) {
+        const { data, error } = await supabase
+          .from("applications")
+          .update(databaseFields(draft))
+          .eq("id", id)
+          .select(
+            "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,legacy_id",
+          )
+          .single();
+
+        if (error) throw error;
+        const updatedApplication = applicationFromRow(data as ApplicationRow);
+        setApplications((current) =>
+          current.map((application) =>
+            application.id === id ? updatedApplication : application,
+          ),
+        );
+        toast.success("Application updated");
+        return true;
+      }
+
+      const { data, error } = await supabase
+        .from("applications")
+        .insert({ user_id: user.id, ...databaseFields(draft) })
+        .select(
+          "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,legacy_id",
+        )
+        .single();
+
+      if (error) throw error;
+      setApplications((current) => [
+        applicationFromRow(data as ApplicationRow),
+        ...current,
+      ]);
+      toast.success("Application added");
+      return true;
+    } catch (caughtError) {
+      toast.error("Application could not be saved", {
+        description: errorMessage(caughtError, "Please try again."),
+      });
+      return false;
+    }
+  }
+
+  async function restoreApplication(application: Application, index: number) {
+    const { data, error } = await supabase
+      .from("applications")
+      .insert({
+        id: application.id,
+        user_id: user.id,
+        ...databaseFields(application),
+      })
+      .select(
+        "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,legacy_id",
+      )
+      .single();
+
+    if (error) {
+      toast.error("Application could not be restored", {
+        description: error.message,
+      });
       return;
     }
 
-    const newApplication: Application = {
-      ...draft,
-      id:
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `application-${Date.now()}`,
-    };
-
-    setApplications((current) =>
-      isDemoData ? [newApplication] : [newApplication, ...current],
-    );
-    toast.success(
-      isDemoData ? "Sample data replaced" : "Application added",
-    );
+    setApplications((current) => {
+      const restored = [...current];
+      restored.splice(
+        Math.min(Math.max(index, 0), restored.length),
+        0,
+        applicationFromRow(data as ApplicationRow),
+      );
+      return restored;
+    });
+    toast.success("Application restored");
   }
 
-  function deleteApplication(application: Application) {
+  async function deleteApplication(application: Application) {
     const index = applications.findIndex((item) => item.id === application.id);
     setApplications((current) =>
       current.filter((item) => item.id !== application.id),
     );
+
+    const { error } = await supabase
+      .from("applications")
+      .delete()
+      .eq("id", application.id);
+
+    if (error) {
+      setApplications((current) => {
+        const restored = [...current];
+        restored.splice(Math.max(index, 0), 0, application);
+        return restored;
+      });
+      toast.error("Application could not be deleted", {
+        description: error.message,
+      });
+      return;
+    }
+
     toast("Application removed", {
       description: `${application.company} · ${application.role}`,
       action: {
         label: "Undo",
-        onClick: () =>
-          setApplications((current) => {
-            const restored = [...current];
-            restored.splice(Math.max(index, 0), 0, application);
-            return restored;
-          }),
+        onClick: () => {
+          void restoreApplication(application, index);
+        },
       },
     });
   }
 
   const flowPercent = (value: number) =>
     metrics.total ? Math.round((value / metrics.total) * 100) : 0;
+
+  if (dataLoading) return <LoadingScreen />;
 
   return (
     <div className="min-h-screen">
@@ -849,11 +963,28 @@ export default function Home() {
               <p className="text-xs text-muted-foreground">Nick&apos;s job search</p>
             </div>
           </div>
-          <Button onClick={openNewApplication} className="shadow-[0_0_24px_rgba(94,227,194,0.12)]">
-            <Plus aria-hidden="true" />
-            <span className="hidden sm:inline">Add application</span>
-            <span className="sm:hidden">Add</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <span className="hidden max-w-52 truncate text-xs text-muted-foreground md:block">
+              {user.email}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => void onSignOut()}
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <LogOut aria-hidden="true" />
+            </Button>
+            <Button
+              onClick={openNewApplication}
+              className="shadow-[0_0_24px_rgba(94,227,194,0.12)]"
+            >
+              <Plus aria-hidden="true" />
+              <span className="hidden sm:inline">Add application</span>
+              <span className="sm:hidden">Add</span>
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -877,20 +1008,21 @@ export default function Home() {
           </p>
         </section>
 
-        {isDemoData && (
-          <div className="mb-5 flex flex-col justify-between gap-3 rounded-xl border border-[#7aa7ff]/20 bg-[#7aa7ff]/[0.07] px-4 py-3 sm:flex-row sm:items-center">
-            <p className="text-sm text-[#b7cbff]">
-              Sample data is showing so you can see the dashboard in action.
-              Your first new entry will replace it.
+        {dataError && (
+          <div className="mb-5 flex flex-col justify-between gap-3 rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3 sm:flex-row sm:items-center">
+            <p className="flex items-start gap-2 text-sm text-[#ffadb2]">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span>
+                Could not load your applications. {dataError}
+              </span>
             </p>
             <Button
               variant="ghost"
               size="sm"
-              className="self-start text-[#b7cbff] hover:bg-[#7aa7ff]/10 hover:text-white sm:self-auto"
-              onClick={() => setApplications([])}
+              className="self-start text-[#ffadb2] hover:bg-destructive/10 hover:text-white sm:self-auto"
+              onClick={() => setReloadToken((current) => current + 1)}
             >
-              <X aria-hidden="true" />
-              Start fresh
+              Try again
             </Button>
           </div>
         )}
@@ -1307,17 +1439,79 @@ export default function Home() {
 
         <footer className="flex items-center justify-between px-1 pb-3 pt-7 text-xs text-[#5e7388]">
           <span>JobTrack</span>
-          <span>Your data stays in this browser.</span>
+          <span className="flex items-center gap-1.5">
+            <Cloud className="size-3.5" aria-hidden="true" />
+            Synced securely with Supabase
+          </span>
         </footer>
       </main>
 
       <ApplicationDialog
+        key={`${dialogOpen}-${editingApplication?.id ?? "new"}`}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         application={editingApplication}
         onSave={saveApplication}
       />
-      <Toaster position="bottom-right" richColors />
     </div>
+  );
+}
+
+export default function Home() {
+  const supabase = getSupabaseClient();
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    let mounted = true;
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setSession(data.session);
+      setAuthReady(true);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return;
+      setSession(nextSession);
+      setAuthReady(true);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  let content;
+  if (!isSupabaseConfigured || !supabase) {
+    content = <SetupScreen />;
+  } else if (!authReady) {
+    content = <LoadingScreen />;
+  } else if (!session) {
+    content = <AuthScreen supabase={supabase} />;
+  } else {
+    content = (
+      <Dashboard
+        supabase={supabase}
+        user={session.user}
+        onSignOut={async () => {
+          const { error } = await supabase.auth.signOut();
+          if (error) {
+            toast.error("Could not sign out", { description: error.message });
+          }
+        }}
+      />
+    );
+  }
+
+  return (
+    <>
+      {content}
+      <Toaster position="bottom-right" richColors />
+    </>
   );
 }
