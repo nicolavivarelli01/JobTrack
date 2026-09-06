@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="112" y1="80" x2="896" y2="944" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#102332"/>
+      <stop offset="1" stop-color="#071019"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="326" y1="292" x2="722" y2="740" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8AF1D9"/>
+      <stop offset="1" stop-color="#43D4B1"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#background)"/>
+  <circle cx="512" cy="512" r="326" fill="none" stroke="#5EE3C2" stroke-opacity=".08" stroke-width="2"/>
+  <circle cx="512" cy="512" r="250" fill="#5EE3C2" fill-opacity=".11" filter="url(#glow)"/>
+  <rect x="242" y="242" width="540" height="540" rx="152" fill="#0C1722" stroke="#5EE3C2" stroke-opacity=".25" stroke-width="4"/>
+  <path d="M326 336h264v88h-86v280H412V424h-86z" fill="url(#mark)"/>
+  <path d="M604 336h94v88h-94zm0 132h94v88h-31v148h-63z" fill="#EEF4F8"/>
+  <circle cx="735" cy="293" r="19" fill="#5EE3C2"/>
+</svg>

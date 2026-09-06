@@ -88,10 +88,17 @@
 html {
   background: var(--background);
   color-scheme: dark;
+  min-height: 100%;
 }
 
 body {
   min-width: 320px;
+  min-height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  overscroll-behavior-y: none;
   background:
     radial-gradient(circle at 75% -15%, rgba(94, 227, 194, 0.08), transparent 30rem),
     var(--background);
@@ -104,6 +111,21 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+button,
+a,
+select {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 ::selection {
