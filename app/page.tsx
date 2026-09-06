@@ -7,11 +7,13 @@ import {
   AlertCircle,
   ArrowRight,
   BriefcaseBusiness,
+  CalendarClock,
   CalendarDays,
   Check,
   CircleDot,
   Cloud,
   ExternalLink,
+  Link2,
   Loader2,
   LogOut,
   MoreHorizontal,
@@ -92,6 +94,7 @@ import {
   getSupabaseClient,
   isSupabaseConfigured,
 } from "@/lib/supabase";
+import { CompanyAvatar } from "@/components/company-avatar";
 
 const stages = [
   "Applied",
@@ -129,6 +132,9 @@ type Application = {
   location?: string;
   jobUrl?: string;
   notes?: string;
+  interviewAt?: string;
+  interviewLink?: string;
+  interviewDetails?: string;
 };
 
 type ApplicationDraft = Omit<Application, "id">;
@@ -150,10 +156,15 @@ type ApplicationRow = {
   location: string | null;
   job_url: string | null;
   notes: string | null;
+  interview_at: string | null;
+  interview_link: string | null;
+  interview_details: string | null;
   legacy_id: string | null;
 };
 
 const storageKey = "jobtrack.applications.v1";
+const applicationColumns =
+  "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,interview_at,interview_link,interview_details,legacy_id";
 
 const activityConfig = {
   applications: {
@@ -203,6 +214,9 @@ function applicationFromRow(row: ApplicationRow): Application {
     location: row.location ?? undefined,
     jobUrl: row.job_url ?? undefined,
     notes: row.notes ?? undefined,
+    interviewAt: row.interview_at ?? undefined,
+    interviewLink: row.interview_link ?? undefined,
+    interviewDetails: row.interview_details ?? undefined,
   };
 }
 
@@ -218,6 +232,9 @@ function databaseFields(draft: ApplicationDraft) {
     location: draft.location || null,
     job_url: draft.jobUrl || null,
     notes: draft.notes || null,
+    interview_at: draft.interviewAt || null,
+    interview_link: draft.interviewLink || null,
+    interview_details: draft.interviewDetails || null,
   };
 }
 
@@ -268,6 +285,35 @@ function formatDate(value?: string) {
     day: "numeric",
     year: "numeric",
   }).format(parseLocalDate(value));
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "—";
+
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function toDateTimeInputValue(value?: string) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 16);
+}
+
+function fromDateTimeInputValue(value: string) {
+  if (!value) return undefined;
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
 function todayInputValue() {
@@ -566,6 +612,9 @@ function ApplicationDialog({
     location: "",
     jobUrl: "",
     notes: "",
+    interviewAt: "",
+    interviewLink: "",
+    interviewDetails: "",
   };
 
   const [draft, setDraft] = useState<ApplicationDraft>(() =>
@@ -581,10 +630,20 @@ function ApplicationDialog({
           location: application.location,
           jobUrl: application.jobUrl,
           notes: application.notes,
+          interviewAt: application.interviewAt,
+          interviewLink: application.interviewLink,
+          interviewDetails: application.interviewDetails,
         }
       : emptyDraft,
   );
   const [submitting, setSubmitting] = useState(false);
+  const [showInterviewFields, setShowInterviewFields] = useState(
+    Boolean(
+      application?.interviewAt ||
+        application?.interviewLink ||
+        application?.interviewDetails,
+    ),
+  );
 
   function updateField<K extends keyof ApplicationDraft>(
     key: K,
@@ -617,6 +676,16 @@ function ApplicationDialog({
     }));
   }
 
+  function removeInterviewSchedule() {
+    setShowInterviewFields(false);
+    setDraft((current) => ({
+      ...current,
+      interviewAt: undefined,
+      interviewLink: undefined,
+      interviewDetails: undefined,
+    }));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft.company.trim() || !draft.role.trim() || !draft.appliedAt) return;
@@ -636,6 +705,13 @@ function ApplicationDialog({
         location: draft.location?.trim(),
         jobUrl: draft.jobUrl?.trim(),
         notes: draft.notes?.trim(),
+        interviewAt: showInterviewFields ? draft.interviewAt : undefined,
+        interviewLink: showInterviewFields
+          ? draft.interviewLink?.trim()
+          : undefined,
+        interviewDetails: showInterviewFields
+          ? draft.interviewDetails?.trim()
+          : undefined,
         responseAt: hasResponse
           ? draft.responseAt || todayInputValue()
           : undefined,
@@ -760,6 +836,88 @@ function ApplicationDialog({
                 placeholder="https://…"
               />
             </div>
+            <section className="sm:col-span-2 rounded-xl border border-[#ffb562]/20 bg-[#ffb562]/[0.045] p-4 sm:p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#ffb562]/10 text-[#ffca8d]">
+                    <CalendarClock className="size-4" aria-hidden="true" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-foreground">
+                      Interview schedule
+                    </h3>
+                    <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                      Save the next interview and everything needed to join it.
+                    </p>
+                  </div>
+                </div>
+                {showInterviewFields ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                    onClick={removeInterviewSchedule}
+                  >
+                    Remove
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowInterviewFields(true)}
+                  >
+                    Add interview
+                  </Button>
+                )}
+              </div>
+
+              {showInterviewFields && (
+                <div className="mt-5 grid gap-4 border-t border-white/[0.07] pt-5 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="interview-date">Date and time</Label>
+                    <Input
+                      id="interview-date"
+                      type="datetime-local"
+                      value={toDateTimeInputValue(draft.interviewAt)}
+                      onChange={(event) =>
+                        updateField(
+                          "interviewAt",
+                          fromDateTimeInputValue(event.target.value),
+                        )
+                      }
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="interview-link">Meeting link</Label>
+                    <Input
+                      id="interview-link"
+                      type="url"
+                      value={draft.interviewLink ?? ""}
+                      onChange={(event) =>
+                        updateField("interviewLink", event.target.value)
+                      }
+                      placeholder="Zoom, Teams, or Google Meet link"
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="interview-details">Interview details</Label>
+                    <Textarea
+                      id="interview-details"
+                      value={draft.interviewDetails ?? ""}
+                      onChange={(event) =>
+                        updateField("interviewDetails", event.target.value)
+                      }
+                      placeholder="Interviewers, format, topics to prepare, or special instructions…"
+                      className="min-h-24 resize-y"
+                      maxLength={5000}
+                    />
+                  </div>
+                </div>
+              )}
+            </section>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="notes">Notes</Label>
               <Textarea
@@ -875,9 +1033,7 @@ function Dashboard({
 
         const { data, error } = await supabase
           .from("applications")
-          .select(
-            "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,legacy_id",
-          )
+          .select(applicationColumns)
           .order("applied_at", { ascending: false });
 
         if (error) throw error;
@@ -977,6 +1133,7 @@ function Dashboard({
             application.location,
             application.source,
             application.notes,
+            application.interviewDetails,
           ]
             .filter(Boolean)
             .some((value) => value?.toLowerCase().includes(normalizedSearch));
@@ -1019,9 +1176,7 @@ function Dashboard({
           .from("applications")
           .update(databaseFields(draft))
           .eq("id", id)
-          .select(
-            "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,legacy_id",
-          )
+          .select(applicationColumns)
           .single();
 
         if (error) throw error;
@@ -1038,9 +1193,7 @@ function Dashboard({
       const { data, error } = await supabase
         .from("applications")
         .insert({ user_id: user.id, ...databaseFields(draft) })
-        .select(
-          "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,legacy_id",
-        )
+        .select(applicationColumns)
         .single();
 
       if (error) throw error;
@@ -1066,9 +1219,7 @@ function Dashboard({
         user_id: user.id,
         ...databaseFields(application),
       })
-      .select(
-        "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,legacy_id",
-      )
+      .select(applicationColumns)
       .single();
 
     if (error) {
@@ -1538,9 +1689,12 @@ function Dashboard({
                     className="px-4 py-5 transition-colors active:bg-white/[0.025]"
                   >
                     <div className="flex items-start gap-3">
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.035] text-sm font-semibold text-[#b9c8d4]">
-                        {application.company.charAt(0).toUpperCase()}
-                      </div>
+                      <CompanyAvatar
+                        key={`mobile-${application.id}-${application.jobUrl ?? ""}`}
+                        company={application.company}
+                        jobUrl={application.jobUrl}
+                        className="size-10"
+                      />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
@@ -1585,6 +1739,36 @@ function Dashboard({
                             {application.outcome}
                           </Badge>
                         </div>
+
+                        {application.interviewAt && (
+                          <div className="mt-4 rounded-lg border border-[#ffb562]/20 bg-[#ffb562]/[0.055] px-3 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="flex min-w-0 items-start gap-2 text-sm font-medium text-[#ffd09a]">
+                                <CalendarClock
+                                  className="mt-0.5 size-4 shrink-0"
+                                  aria-hidden="true"
+                                />
+                                <span>{formatDateTime(application.interviewAt)}</span>
+                              </p>
+                              {application.interviewLink && (
+                                <a
+                                  href={application.interviewLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary hover:underline"
+                                >
+                                  <Link2 className="size-3.5" aria-hidden="true" />
+                                  Join
+                                </a>
+                              )}
+                            </div>
+                            {application.interviewDetails && (
+                              <p className="mt-2 line-clamp-2 text-sm leading-5 text-muted-foreground">
+                                {application.interviewDetails}
+                              </p>
+                            )}
+                          </div>
+                        )}
 
                         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
                           <div>
@@ -1653,9 +1837,12 @@ function Dashboard({
                   >
                     <TableCell className="px-5 py-4 sm:px-6">
                       <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.035] text-sm font-semibold text-[#b9c8d4]">
-                          {application.company.charAt(0).toUpperCase()}
-                        </div>
+                        <CompanyAvatar
+                          key={`desktop-${application.id}-${application.jobUrl ?? ""}`}
+                          company={application.company}
+                          jobUrl={application.jobUrl}
+                          className="mt-0.5 size-9 rounded-lg"
+                        />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <p className="truncate font-medium text-foreground">
@@ -1677,6 +1864,25 @@ function Dashboard({
                             {application.role}
                             {application.location ? ` · ${application.location}` : ""}
                           </p>
+                          {application.interviewAt && (
+                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#d9ad76]">
+                              <span className="flex items-center gap-1.5">
+                                <CalendarClock className="size-3.5" aria-hidden="true" />
+                                {formatDateTime(application.interviewAt)}
+                              </span>
+                              {application.interviewLink && (
+                                <a
+                                  href={application.interviewLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="flex items-center gap-1 font-medium text-primary hover:underline"
+                                >
+                                  <Link2 className="size-3" aria-hidden="true" />
+                                  Join
+                                </a>
+                              )}
+                            </div>
+                          )}
                           {application.notes && (
                             <p className="mt-2 line-clamp-2 max-w-xl text-sm leading-5 text-[#7f93a6]">
                               {application.notes}
