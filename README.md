@@ -17,7 +17,16 @@ A personal job-search dashboard for tracking applications, employer responses, i
 - Supabase Postgres persistence across devices
 - Row-level security so each account can access only its own applications
 - One-time import of existing non-demo browser data
-- Responsive dark interface
+- Installable iPhone and Android PWA with branded Home Screen icons
+- Standalone, notch-safe mobile layout
+- Touch-friendly mobile application cards and a responsive dark interface
+
+## Install on iPhone
+
+1. Open the deployed JobTrack URL in Safari.
+2. Tap the **Share** button.
+3. Tap **Add to Home Screen** and keep **Open as Web App** enabled.
+4. Tap **Add**. JobTrack will open from its own Home Screen icon without Safari chrome.
 
 ## Run locally
 

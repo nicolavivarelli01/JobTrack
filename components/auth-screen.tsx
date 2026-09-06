@@ -20,14 +20,16 @@ type AuthMode = "sign-in" | "sign-up" | "forgot-password";
 
 function AuthShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-10 sm:px-6">
+    <main className="flex min-h-[100dvh] items-center justify-center px-4 py-10 sm:px-6">
       <div className="w-full max-w-md">
         <div className="mb-7 flex items-center justify-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 font-mono text-sm font-bold text-primary">
             JT
           </div>
           <div>
-            <p className="text-lg font-semibold tracking-[-0.025em]">JobTrack by Nick Vivarelli</p>
+            <p className="text-lg font-semibold tracking-[-0.025em]">
+              JobTrack by Nick Vivarelli
+            </p>
             <p className="text-xs text-muted-foreground">Your search, synchronized</p>
           </div>
         </div>

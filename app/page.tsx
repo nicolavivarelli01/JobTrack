@@ -18,9 +18,12 @@ import {
   Pencil,
   Plus,
   Search,
+  Share2,
+  Smartphone,
   Target,
   Trash2,
   TrendingUp,
+  X,
 } from "lucide-react";
 import {
   Area,
@@ -449,6 +452,95 @@ function EmptyApplications({ onAdd }: { onAdd: () => void }) {
         Add application
       </Button>
     </div>
+  );
+}
+
+function ApplicationActions({
+  application,
+  onEdit,
+  onDelete,
+}: {
+  application: Application;
+  onEdit: (application: Application) => void;
+  onDelete: (application: Application) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`Actions for ${application.company}`}
+        >
+          <MoreHorizontal aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-36">
+        <DropdownMenuItem onSelect={() => onEdit(application)}>
+          <Pencil aria-hidden="true" /> Edit
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          variant="destructive"
+          onSelect={() => onDelete(application)}
+        >
+          <Trash2 aria-hidden="true" /> Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function IOSInstallHint() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const navigatorWithStandalone = window.navigator as Navigator & {
+      standalone?: boolean;
+    };
+    const isIOS = /iPad|iPhone|iPod/.test(navigatorWithStandalone.userAgent);
+    const isStandalone =
+      navigatorWithStandalone.standalone === true ||
+      window.matchMedia("(display-mode: standalone)").matches;
+    const dismissed = window.localStorage.getItem(
+      "jobtrack.install-hint-dismissed",
+    );
+
+    const frame = window.requestAnimationFrame(() => {
+      setVisible(isIOS && !isStandalone && !dismissed);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  if (!visible) return null;
+
+  function dismiss() {
+    window.localStorage.setItem("jobtrack.install-hint-dismissed", "true");
+    setVisible(false);
+  }
+
+  return (
+    <aside className="mb-5 flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/[0.07] px-4 py-3.5 text-sm shadow-[0_16px_40px_rgba(0,0,0,.14)]">
+      <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <Smartphone className="size-4" aria-hidden="true" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="font-medium text-foreground">Install JobTrack on this iPhone</p>
+        <p className="mt-1 leading-5 text-muted-foreground">
+          In Safari, tap <Share2 className="mx-1 inline size-3.5" aria-label="Share" />
+          then <span className="text-foreground">Add to Home Screen</span>.
+        </p>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        onClick={dismiss}
+        aria-label="Dismiss install instructions"
+      >
+        <X aria-hidden="true" />
+      </Button>
+    </aside>
   );
 }
 
@@ -1038,8 +1130,8 @@ function Dashboard({
   if (dataLoading) return <LoadingScreen />;
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-white/[0.07] bg-[#071019]/90 backdrop-blur-xl">
+    <div className="min-h-[100dvh]">
+      <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-[#071019]/88 backdrop-blur-xl">
         <div className="mx-auto flex h-[4.75rem] max-w-[1480px] items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
             <div className="flex size-9 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 font-mono text-sm font-bold text-primary">
@@ -1094,6 +1186,8 @@ function Dashboard({
             }).format(new Date())}
           </p>
         </section>
+
+        <IOSInstallHint />
 
         {dataError && (
           <div className="mb-5 flex flex-col justify-between gap-3 rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3 sm:flex-row sm:items-center">
@@ -1436,7 +1530,96 @@ function Dashboard({
               </p>
             </div>
           ) : (
-            <Table>
+            <>
+              <div className="divide-y divide-white/[0.055] md:hidden">
+                {filteredApplications.map((application) => (
+                  <article
+                    key={application.id}
+                    className="px-4 py-5 transition-colors active:bg-white/[0.025]"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.035] text-sm font-semibold text-[#b9c8d4]">
+                        {application.company.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="truncate font-medium text-foreground">
+                                {application.company}
+                              </h3>
+                              {application.jobUrl && (
+                                <a
+                                  href={application.jobUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="shrink-0 text-muted-foreground transition-colors hover:text-primary"
+                                  aria-label={`Open ${application.company} job posting`}
+                                >
+                                  <ExternalLink className="size-3.5" />
+                                </a>
+                              )}
+                            </div>
+                            <p className="mt-1 truncate text-sm text-muted-foreground">
+                              {application.role}
+                            </p>
+                          </div>
+                          <ApplicationActions
+                            application={application}
+                            onEdit={openEditApplication}
+                            onDelete={deleteApplication}
+                          />
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Badge
+                            variant="outline"
+                            className={stageBadgeClass(application.stage)}
+                          >
+                            {application.stage}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={outcomeBadgeClass(application.outcome)}
+                          >
+                            {application.outcome}
+                          </Badge>
+                        </div>
+
+                        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+                          <div>
+                            <dt className="text-muted-foreground">Applied</dt>
+                            <dd className="mt-1 font-mono text-[#b5c4d0]">
+                              {formatDate(application.appliedAt)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-muted-foreground">Response</dt>
+                            <dd className="mt-1 font-mono text-[#b5c4d0]">
+                              {formatDate(application.responseAt)}
+                            </dd>
+                          </div>
+                          {(application.location || application.source) && (
+                            <div className="col-span-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                              {application.location && <span>{application.location}</span>}
+                              {application.source && <span>Via {application.source}</span>}
+                            </div>
+                          )}
+                        </dl>
+
+                        {application.notes && (
+                          <p className="mt-4 line-clamp-3 rounded-lg border border-white/[0.06] bg-black/10 px-3 py-2.5 text-sm leading-5 text-[#8fa3b6]">
+                            {application.notes}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
+                <Table>
               <TableHeader>
                 <TableRow className="border-white/[0.07] hover:bg-transparent">
                   <TableHead className="h-11 min-w-72 px-5 text-xs uppercase tracking-[0.1em] text-muted-foreground sm:px-6">
@@ -1528,35 +1711,18 @@ function Dashboard({
                       {application.source || "—"}
                     </TableCell>
                     <TableCell className="px-5 text-right sm:px-6">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={`Actions for ${application.company}`}
-                          >
-                            <MoreHorizontal aria-hidden="true" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-36">
-                          <DropdownMenuItem
-                            onSelect={() => openEditApplication(application)}
-                          >
-                            <Pencil aria-hidden="true" /> Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onSelect={() => deleteApplication(application)}
-                          >
-                            <Trash2 aria-hidden="true" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <ApplicationActions
+                        application={application}
+                        onEdit={openEditApplication}
+                        onDelete={deleteApplication}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+                </Table>
+              </div>
+            </>
           )}
         </Card>
 
