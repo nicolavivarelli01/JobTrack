@@ -1330,7 +1330,7 @@ function Dashboard({
         <Card className="mt-4 gap-0 overflow-hidden border-white/[0.07] bg-card/85 py-0">
           <CardHeader className="border-b border-white/[0.07] px-5 py-5 sm:px-6">
             <CardTitle className="text-base tracking-[-0.02em]">
-              Application flow
+              How your applications flow
             </CardTitle>
             <CardDescription>
               Conversion from submitted applications to offers

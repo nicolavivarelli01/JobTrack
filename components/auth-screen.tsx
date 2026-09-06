@@ -27,7 +27,7 @@ function AuthShell({ children }: { children: React.ReactNode }) {
             JT
           </div>
           <div>
-            <p className="text-lg font-semibold tracking-[-0.025em]">JobTrack</p>
+            <p className="text-lg font-semibold tracking-[-0.025em]">JobTrack by Nick Vivarelli</p>
             <p className="text-xs text-muted-foreground">Your search, synchronized</p>
           </div>
         </div>
