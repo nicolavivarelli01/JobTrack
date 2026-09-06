@@ -10,22 +10,38 @@ A personal job-search dashboard for tracking applications, employer responses, i
 - Current-outcome breakdown
 - Searchable and filterable application table
 - Add, edit, and delete workflows
-- Browser-local persistence with no account or backend required
+- Email/password authentication
+- Supabase Postgres persistence across devices
+- Row-level security so each account can access only its own applications
+- One-time import of existing non-demo browser data
 - Responsive dark interface
 
 ## Run locally
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Supabase setup
+
+1. Create a Supabase project.
+2. Open **SQL Editor**, paste the contents of `supabase/migrations/202609060001_create_applications.sql`, and run it once.
+3. Copy `.env.example` to `.env.local` and fill in the project URL and publishable key from **Connect → API Keys**.
+4. In **Authentication → URL Configuration**, set the Site URL to the deployed app URL and add the same URL to Redirect URLs.
+
+Only the publishable browser key belongs in these variables. Never expose or commit a `service_role` or secret key.
+
 ## Deploy to Vercel
 
-Import this GitHub repository into Vercel and keep the detected Next.js defaults. No environment variables are required.
+Add these variables to the Vercel project for Production, Preview, and Development, then redeploy:
 
-## Data storage
+```text
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+```
 
-Applications are stored in the browser's `localStorage`. The data is therefore private to that browser and is not synchronized between devices.
+The browser talks directly to Supabase using the signed-in session. PostgreSQL row-level-security policies enforce ownership for reads, inserts, updates, and deletes.
