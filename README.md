@@ -5,7 +5,8 @@ A personal job-search dashboard for tracking applications, employer responses, i
 ## Features
 
 - Application, response, interview, and offer metrics
-- Eight-week application and response trend
+- Application and response trends for this month, 3 months, or 6 months
+- Detailed pipeline stages through Interview 1, 2, 3, and 4+
 - Conversion flow from application to offer
 - Current-outcome breakdown
 - Searchable and filterable application table
@@ -29,7 +30,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Open **SQL Editor**, paste the contents of `supabase/migrations/202609060001_create_applications.sql`, and run it once.
+2. Open **SQL Editor** and run the files in `supabase/migrations` in filename order. If your database already exists, run only the newer files you have not applied yet.
 3. Copy `.env.example` to `.env.local` and fill in the project URL and publishable key from **Connect → API Keys**.
 4. In **Authentication → URL Configuration**, set the Site URL to the deployed app URL and add the same URL to Redirect URLs.
 
