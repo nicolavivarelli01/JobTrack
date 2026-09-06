@@ -92,14 +92,25 @@ const stages = [
   "Applied",
   "Assessment",
   "Recruiter screen",
-  "Interview",
+  "Interview 1",
+  "Interview 2",
+  "Interview 3",
+  "Interview 4+",
   "Offer",
 ] as const;
 
 const outcomes = ["Active", "Rejected", "Offer", "Withdrawn"] as const;
 
+const momentumRanges = [
+  { value: "month", label: "This month" },
+  { value: "3mo", label: "3mo" },
+  { value: "6mo", label: "6mo" },
+] as const;
+
 type Stage = (typeof stages)[number];
 type Outcome = (typeof outcomes)[number];
+type MomentumRange = (typeof momentumRanges)[number]["value"];
+type StoredStage = Stage | "Interview";
 
 type Application = {
   id: string;
@@ -115,6 +126,10 @@ type Application = {
 };
 
 type ApplicationDraft = Omit<Application, "id">;
+
+type StoredApplication = Omit<Application, "stage"> & {
+  stage: StoredStage;
+};
 
 type ApplicationRow = {
   id: string;
@@ -155,8 +170,17 @@ const stageRank: Record<Stage, number> = {
   Applied: 0,
   Assessment: 1,
   "Recruiter screen": 2,
-  Interview: 3,
-  Offer: 4,
+  "Interview 1": 3,
+  "Interview 2": 4,
+  "Interview 3": 5,
+  "Interview 4+": 6,
+  Offer: 7,
+};
+
+const momentumDescriptions: Record<MomentumRange, string> = {
+  month: "Daily applications and responses this month",
+  "3mo": "Weekly applications and responses over the last 3 months",
+  "6mo": "Weekly applications and responses over the last 6 months",
 };
 
 function applicationFromRow(row: ApplicationRow): Application {
@@ -188,18 +212,27 @@ function databaseFields(draft: ApplicationDraft) {
   };
 }
 
-function isStoredApplication(value: unknown): value is Application {
+function isStoredApplication(value: unknown): value is StoredApplication {
   if (!value || typeof value !== "object") return false;
 
-  const application = value as Partial<Application>;
+  const application = value as Partial<StoredApplication>;
   return (
     typeof application.id === "string" &&
     typeof application.company === "string" &&
     typeof application.role === "string" &&
     typeof application.appliedAt === "string" &&
-    stages.includes(application.stage as Stage) &&
+    [...stages, "Interview"].includes(application.stage as StoredStage) &&
     outcomes.includes(application.outcome as Outcome)
   );
+}
+
+function normalizeStoredApplication(
+  application: StoredApplication,
+): Application {
+  return {
+    ...application,
+    stage: application.stage === "Interview" ? "Interview 1" : application.stage,
+  };
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -234,41 +267,66 @@ function todayInputValue() {
   return new Date(now.getTime() - offset * 60_000).toISOString().slice(0, 10);
 }
 
-function startOfWeek(value: Date) {
+function startOfLocalDay(value: Date) {
   const date = new Date(value);
-  const day = date.getDay();
-  const difference = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + difference);
   date.setHours(0, 0, 0, 0);
   return date;
 }
 
-function buildWeeklySeries(applications: Application[]) {
-  const currentWeek = startOfWeek(new Date());
+function addDays(value: Date, days: number) {
+  const date = new Date(value);
+  date.setDate(date.getDate() + days);
+  return date;
+}
 
-  return Array.from({ length: 8 }, (_, index) => {
-    const start = new Date(currentWeek);
-    start.setDate(currentWeek.getDate() - (7 - index) * 7);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 7);
+function subtractMonths(value: Date, months: number) {
+  const target = new Date(value.getFullYear(), value.getMonth() - months, 1);
+  const lastDay = new Date(
+    target.getFullYear(),
+    target.getMonth() + 1,
+    0,
+  ).getDate();
+  target.setDate(Math.min(value.getDate(), lastDay));
+  return target;
+}
 
-    const isInWeek = (value?: string) => {
+function buildMomentumSeries(
+  applications: Application[],
+  range: MomentumRange,
+) {
+  const today = startOfLocalDay(new Date());
+  const tomorrow = addDays(today, 1);
+  const start =
+    range === "month"
+      ? new Date(today.getFullYear(), today.getMonth(), 1)
+      : subtractMonths(today, range === "3mo" ? 3 : 6);
+  const bucketSize = range === "month" ? 1 : 7;
+  const buckets = [];
+
+  for (let cursor = start; cursor < tomorrow; cursor = addDays(cursor, bucketSize)) {
+    const next = addDays(cursor, bucketSize);
+    const end = next < tomorrow ? next : tomorrow;
+    const labelDate = addDays(end, -1);
+
+    const isInBucket = (value?: string) => {
       if (!value) return false;
       const date = parseLocalDate(value);
-      return date >= start && date < end;
+      return date >= cursor && date < end;
     };
 
-    return {
-      week: new Intl.DateTimeFormat("en-US", {
+    buckets.push({
+      label: new Intl.DateTimeFormat("en-US", {
         month: "short",
         day: "numeric",
-      }).format(start),
-      applications: applications.filter((item) => isInWeek(item.appliedAt))
+      }).format(labelDate),
+      applications: applications.filter((item) => isInBucket(item.appliedAt))
         .length,
-      responses: applications.filter((item) => isInWeek(item.responseAt))
+      responses: applications.filter((item) => isInBucket(item.responseAt))
         .length,
-    };
-  });
+    });
+  }
+
+  return buckets;
 }
 
 function stageBadgeClass(stage: Stage) {
@@ -277,7 +335,10 @@ function stageBadgeClass(stage: Stage) {
       return "border-[#7aa7ff]/30 bg-[#7aa7ff]/10 text-[#a8c4ff]";
     case "Recruiter screen":
       return "border-[#a998ff]/30 bg-[#a998ff]/10 text-[#c9bdff]";
-    case "Interview":
+    case "Interview 1":
+    case "Interview 2":
+    case "Interview 3":
+    case "Interview 4+":
       return "border-[#ffb562]/30 bg-[#ffb562]/10 text-[#ffd09a]";
     case "Offer":
       return "border-[#5ee3c2]/30 bg-[#5ee3c2]/10 text-[#8cf0d7]";
@@ -639,6 +700,8 @@ function Dashboard({
   const [reloadToken, setReloadToken] = useState(0);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [momentumRange, setMomentumRange] =
+    useState<MomentumRange>("3mo");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingApplication, setEditingApplication] =
     useState<Application | null>(null);
@@ -662,7 +725,9 @@ function Dashboard({
             try {
               const parsed: unknown = JSON.parse(saved);
               storedApplications = Array.isArray(parsed)
-                ? parsed.filter(isStoredApplication)
+                ? parsed
+                    .filter(isStoredApplication)
+                    .map(normalizeStoredApplication)
                 : [];
             } catch {
               // Ignore malformed legacy browser data and continue with Supabase.
@@ -737,7 +802,8 @@ function Dashboard({
         application.outcome === "Offer",
     ).length;
     const interviews = applications.filter(
-      (application) => stageRank[application.stage] >= stageRank.Interview,
+      (application) =>
+        stageRank[application.stage] >= stageRank["Interview 1"],
     ).length;
     const offers = applications.filter(
       (application) =>
@@ -770,9 +836,9 @@ function Dashboard({
     };
   }, [applications]);
 
-  const weeklySeries = useMemo(
-    () => buildWeeklySeries(applications),
-    [applications],
+  const momentumSeries = useMemo(
+    () => buildMomentumSeries(applications, momentumRange),
+    [applications, momentumRange],
   );
 
   const outcomeData = useMemo(
@@ -1067,11 +1133,42 @@ function Dashboard({
 
         <section className="mt-4 grid gap-4 xl:grid-cols-12">
           <Card className="gap-0 border-white/[0.07] bg-card/85 py-0 xl:col-span-7">
-            <CardHeader className="border-b border-white/[0.07] px-5 py-5 sm:px-6">
-              <CardTitle className="text-base tracking-[-0.02em]">
-                Search momentum
-              </CardTitle>
-              <CardDescription>Applications sent and responses received by week</CardDescription>
+            <CardHeader className="flex flex-col gap-4 border-b border-white/[0.07] px-5 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+              <div>
+                <CardTitle className="text-base tracking-[-0.02em]">
+                  Search momentum
+                </CardTitle>
+                <CardDescription className="mt-1.5">
+                  {momentumDescriptions[momentumRange]}
+                </CardDescription>
+              </div>
+              <div
+                className="flex w-fit items-center gap-1 rounded-lg border border-white/[0.08] bg-[#07131e] p-1"
+                role="group"
+                aria-label="Search momentum date range"
+              >
+                {momentumRanges.map((option) => {
+                  const isSelected = momentumRange === option.value;
+
+                  return (
+                    <Button
+                      key={option.value}
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-pressed={isSelected}
+                      onClick={() => setMomentumRange(option.value)}
+                      className={
+                        isSelected
+                          ? "bg-primary/15 text-primary shadow-sm hover:bg-primary/20 hover:text-primary"
+                          : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+                      }
+                    >
+                      {option.label}
+                    </Button>
+                  );
+                })}
+              </div>
             </CardHeader>
             <CardContent className="px-2 pb-4 pt-5 sm:px-5">
               <ChartContainer
@@ -1080,7 +1177,7 @@ function Dashboard({
               >
                 <AreaChart
                   accessibilityLayer
-                  data={weeklySeries}
+                  data={momentumSeries}
                   margin={{ top: 8, right: 12, left: -22, bottom: 0 }}
                 >
                   <defs>
@@ -1095,7 +1192,7 @@ function Dashboard({
                   </defs>
                   <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.07)" />
                   <XAxis
-                    dataKey="week"
+                    dataKey="label"
                     tickLine={false}
                     axisLine={false}
                     tickMargin={10}
