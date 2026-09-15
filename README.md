@@ -8,7 +8,8 @@ A personal job-search dashboard for tracking applications, positive employer res
 - Application, positive-response, and rejection trends for this month, 3 months, or 6 months
 - Dedicated rejection dates for accurate rejection trends
 - Detailed pipeline stages through Interview 1, 2, 3, and 4+
-- Conversion flow from applications through assessment, interview, and offer, with rejections shown separately
+- Assessment participation tracked independently from the highest stage reached
+- Branching flow for rejections, optional assessments, direct interviews, and offers
 - Current-outcome breakdown
 - Searchable and filterable application table
 - Add, edit, and delete workflows
