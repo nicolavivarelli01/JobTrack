@@ -135,6 +135,7 @@ type Application = {
   interviewAt?: string;
   interviewLink?: string;
   interviewDetails?: string;
+  rejectedAt?: string;
 };
 
 type ApplicationDraft = Omit<Application, "id">;
@@ -159,21 +160,26 @@ type ApplicationRow = {
   interview_at: string | null;
   interview_link: string | null;
   interview_details: string | null;
+  rejected_at: string | null;
   legacy_id: string | null;
 };
 
 const storageKey = "jobtrack.applications.v1";
 const applicationColumns =
-  "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,interview_at,interview_link,interview_details,legacy_id";
+  "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,interview_at,interview_link,interview_details,rejected_at,legacy_id";
 
 const activityConfig = {
   applications: {
     label: "Applications",
     color: "#5ee3c2",
   },
-  responses: {
-    label: "Responses",
+  positiveResponses: {
+    label: "Positive responses",
     color: "#7aa7ff",
+  },
+  rejections: {
+    label: "Rejections",
+    color: "#ff6b74",
   },
 } satisfies ChartConfig;
 
@@ -196,9 +202,9 @@ const stageRank: Record<Stage, number> = {
 };
 
 const momentumDescriptions: Record<MomentumRange, string> = {
-  month: "Daily applications and responses this month",
-  "3mo": "Weekly applications and responses over the last 3 months",
-  "6mo": "Weekly applications and responses over the last 6 months",
+  month: "Daily applications, positive responses, and rejections this month",
+  "3mo": "Weekly applications, positive responses, and rejections over 3 months",
+  "6mo": "Weekly applications, positive responses, and rejections over 6 months",
 };
 
 function applicationFromRow(row: ApplicationRow): Application {
@@ -217,6 +223,7 @@ function applicationFromRow(row: ApplicationRow): Application {
     interviewAt: row.interview_at ?? undefined,
     interviewLink: row.interview_link ?? undefined,
     interviewDetails: row.interview_details ?? undefined,
+    rejectedAt: row.rejected_at ?? undefined,
   };
 }
 
@@ -235,6 +242,7 @@ function databaseFields(draft: ApplicationDraft) {
     interview_at: draft.interviewAt || null,
     interview_link: draft.interviewLink || null,
     interview_details: draft.interviewDetails || null,
+    rejected_at: draft.rejectedAt || null,
   };
 }
 
@@ -258,6 +266,10 @@ function normalizeStoredApplication(
   return {
     ...application,
     stage: application.stage === "Interview" ? "Interview 1" : application.stage,
+    rejectedAt:
+      application.outcome === "Rejected"
+        ? application.rejectedAt || application.responseAt || application.appliedAt
+        : application.rejectedAt,
   };
 }
 
@@ -376,8 +388,15 @@ function buildMomentumSeries(
       }).format(labelDate),
       applications: applications.filter((item) => isInBucket(item.appliedAt))
         .length,
-      responses: applications.filter((item) => isInBucket(item.responseAt))
-        .length,
+      positiveResponses: applications.filter(
+        (item) =>
+          (item.stage !== "Applied" || item.outcome === "Offer") &&
+          isInBucket(item.responseAt),
+      ).length,
+      rejections: applications.filter(
+        (item) =>
+          item.outcome === "Rejected" && isInBucket(item.rejectedAt),
+      ).length,
     });
   }
 
@@ -615,6 +634,7 @@ function ApplicationDialog({
     interviewAt: "",
     interviewLink: "",
     interviewDetails: "",
+    rejectedAt: "",
   };
 
   const [draft, setDraft] = useState<ApplicationDraft>(() =>
@@ -633,6 +653,7 @@ function ApplicationDialog({
           interviewAt: application.interviewAt,
           interviewLink: application.interviewLink,
           interviewDetails: application.interviewDetails,
+          rejectedAt: application.rejectedAt,
         }
       : emptyDraft,
   );
@@ -669,8 +690,13 @@ function ApplicationDialog({
       ...current,
       outcome,
       stage: outcome === "Offer" ? "Offer" : current.stage,
+      rejectedAt:
+        outcome === "Rejected"
+          ? current.rejectedAt || todayInputValue()
+          : undefined,
       responseAt:
-        outcome !== "Active" && outcome !== "Withdrawn" && !current.responseAt
+        (current.stage !== "Applied" || outcome === "Offer") &&
+        !current.responseAt
           ? todayInputValue()
           : current.responseAt,
     }));
@@ -690,10 +716,8 @@ function ApplicationDialog({
     event.preventDefault();
     if (!draft.company.trim() || !draft.role.trim() || !draft.appliedAt) return;
 
-    const hasResponse =
-      draft.stage !== "Applied" ||
-      draft.outcome === "Rejected" ||
-      draft.outcome === "Offer";
+    const hasPositiveResponse =
+      draft.stage !== "Applied" || draft.outcome === "Offer";
 
     setSubmitting(true);
     const saved = await onSave(
@@ -712,9 +736,13 @@ function ApplicationDialog({
         interviewDetails: showInterviewFields
           ? draft.interviewDetails?.trim()
           : undefined,
-        responseAt: hasResponse
+        responseAt: hasPositiveResponse
           ? draft.responseAt || todayInputValue()
           : undefined,
+        rejectedAt:
+          draft.outcome === "Rejected"
+            ? draft.rejectedAt || todayInputValue()
+            : undefined,
       },
       application?.id,
     );
@@ -800,7 +828,7 @@ function ApplicationDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="response-date">First response date</Label>
+              <Label htmlFor="response-date">First positive response date</Label>
               <Input
                 id="response-date"
                 type="date"
@@ -808,6 +836,20 @@ function ApplicationDialog({
                 onChange={(event) => updateField("responseAt", event.target.value)}
               />
             </div>
+            {draft.outcome === "Rejected" && (
+              <div className="space-y-2">
+                <Label htmlFor="rejection-date">Rejection date</Label>
+                <Input
+                  id="rejection-date"
+                  type="date"
+                  value={draft.rejectedAt ?? ""}
+                  onChange={(event) =>
+                    updateField("rejectedAt", event.target.value)
+                  }
+                  required
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="source">Source</Label>
               <Input
@@ -1063,10 +1105,14 @@ function Dashboard({
   }, [reloadToken, supabase, user.id]);
 
   const metrics = useMemo(() => {
-    const responses = applications.filter(
+    const positiveResponses = applications.filter(
       (application) =>
         application.stage !== "Applied" ||
-        application.outcome === "Rejected" ||
+        application.outcome === "Offer",
+    ).length;
+    const assessments = applications.filter(
+      (application) =>
+        stageRank[application.stage] >= stageRank.Assessment ||
         application.outcome === "Offer",
     ).length;
     const interviews = applications.filter(
@@ -1089,17 +1135,24 @@ function Dashboard({
 
     return {
       total: applications.length,
-      responses,
+      positiveResponses,
+      assessments,
       interviews,
       offers,
       rejected,
       active,
       withdrawn,
-      responseRate: applications.length
-        ? Math.round((responses / applications.length) * 100)
+      positiveResponseRate: applications.length
+        ? Math.round((positiveResponses / applications.length) * 100)
+        : 0,
+      rejectionRate: applications.length
+        ? Math.round((rejected / applications.length) * 100)
         : 0,
       interviewRate: applications.length
         ? Math.round((interviews / applications.length) * 100)
+        : 0,
+      offerRate: applications.length
+        ? Math.round((offers / applications.length) * 100)
         : 0,
     };
   }, [applications]);
@@ -1290,7 +1343,9 @@ function Dashboard({
             </div>
             <div>
               <p className="text-base font-semibold tracking-[-0.025em]">JobTrack</p>
-              <p className="text-xs text-muted-foreground">Your job search path starts here.</p>
+              <p className="text-xs text-muted-foreground">
+                Your job search path starts here.
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1361,7 +1416,7 @@ function Dashboard({
 
         <section
           aria-label="Application metrics"
-          className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
         >
           <MetricCard
             label="Applications"
@@ -1372,12 +1427,20 @@ function Dashboard({
             delay="0ms"
           />
           <MetricCard
-            label="Response rate"
-            value={`${metrics.responseRate}%`}
-            detail={`${metrics.responses} employer responses`}
+            label="Positive response rate"
+            value={`${metrics.positiveResponseRate}%`}
+            detail={`${metrics.positiveResponses} advanced applications`}
             icon={TrendingUp}
             accent="#7aa7ff"
             delay="60ms"
+          />
+          <MetricCard
+            label="Rejection rate"
+            value={`${metrics.rejectionRate}%`}
+            detail={`${metrics.rejected} total rejections`}
+            icon={X}
+            accent="#ff6b74"
+            delay="120ms"
           />
           <MetricCard
             label="Interviews"
@@ -1385,15 +1448,15 @@ function Dashboard({
             detail={`${metrics.interviewRate}% of applications`}
             icon={Target}
             accent="#ffb562"
-            delay="120ms"
+            delay="180ms"
           />
           <MetricCard
             label="Offers"
             value={metrics.offers}
-            detail={`${metrics.rejected} rejections so far`}
+            detail={`${metrics.offerRate}% of applications`}
             icon={Check}
             accent="#a998ff"
-            delay="180ms"
+            delay="240ms"
           />
         </section>
 
@@ -1451,9 +1514,25 @@ function Dashboard({
                       <stop offset="5%" stopColor="#5ee3c2" stopOpacity={0.32} />
                       <stop offset="95%" stopColor="#5ee3c2" stopOpacity={0} />
                     </linearGradient>
-                    <linearGradient id="responses-fill" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient
+                      id="positive-responses-fill"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
                       <stop offset="5%" stopColor="#7aa7ff" stopOpacity={0.26} />
                       <stop offset="95%" stopColor="#7aa7ff" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient
+                      id="rejections-fill"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop offset="5%" stopColor="#ff6b74" stopOpacity={0.22} />
+                      <stop offset="95%" stopColor="#ff6b74" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.07)" />
@@ -1478,19 +1557,29 @@ function Dashboard({
                   />
                   <Area
                     type="monotone"
-                    dataKey="responses"
+                    dataKey="positiveResponses"
                     stroke="#7aa7ff"
                     strokeWidth={2.25}
-                    fill="url(#responses-fill)"
+                    fill="url(#positive-responses-fill)"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="rejections"
+                    stroke="#ff6b74"
+                    strokeWidth={2.25}
+                    fill="url(#rejections-fill)"
                   />
                 </AreaChart>
               </ChartContainer>
-              <div className="flex items-center justify-center gap-5 pb-1 text-sm text-muted-foreground">
+              <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 pb-1 text-sm text-muted-foreground">
                 <span className="flex items-center gap-2">
                   <span className="size-2 rounded-sm bg-[#5ee3c2]" /> Applications
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="size-2 rounded-sm bg-[#7aa7ff]" /> Responses
+                  <span className="size-2 rounded-sm bg-[#7aa7ff]" /> Positive responses
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="size-2 rounded-sm bg-[#ff6b74]" /> Rejections
                 </span>
               </div>
             </CardContent>
@@ -1578,7 +1667,7 @@ function Dashboard({
               How your applications flow
             </CardTitle>
             <CardDescription>
-              Conversion from submitted applications to offers
+              Assessment+ includes assessments, recruiter screens, and later stages
             </CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto px-5 py-6 sm:px-6">
@@ -1591,9 +1680,9 @@ function Dashboard({
                 />
                 <ArrowRight className="size-4 text-[#496078]" aria-hidden="true" />
                 <FlowNode
-                  label="Responses"
-                  value={metrics.responses}
-                  percentage={flowPercent(metrics.responses)}
+                  label="Assessments+"
+                  value={metrics.assessments}
+                  percentage={flowPercent(metrics.assessments)}
                 />
                 <ArrowRight className="size-4 text-[#496078]" aria-hidden="true" />
                 <FlowNode
