@@ -501,11 +501,11 @@ function FlowNode({
       ? "border-[#ff6b74]/25 bg-[#ff6b74]/8"
       : tone === "success"
         ? "border-[#5ee3c2]/25 bg-[#5ee3c2]/8"
-        : tone === "assessment"
-          ? "border-[#7aa7ff]/25 bg-[#7aa7ff]/8"
-          : tone === "interview"
-            ? "border-[#ffb562]/25 bg-[#ffb562]/8"
-        : "border-white/[0.08] bg-white/[0.025]";
+          : tone === "assessment"
+            ? "border-[#7aa7ff]/25 bg-[#7aa7ff]/8"
+            : tone === "interview"
+              ? "border-[#ffb562]/25 bg-[#ffb562]/8"
+              : "border-white/[0.08] bg-white/[0.025]";
 
   return (
     <div
@@ -960,7 +960,7 @@ function ApplicationDialog({
           ? "Assessment"
           : !hadAssessment && current.stage === "Assessment"
             ? "Applied"
-          : current.stage,
+            : current.stage,
       responseAt:
         hadAssessment && !current.responseAt
           ? todayInputValue()
