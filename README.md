@@ -1,13 +1,14 @@
 # JobTrack
 
-A personal job-search dashboard for tracking applications, employer responses, interviews, offers, and rejections.
+A personal job-search dashboard for tracking applications, positive employer responses, interviews, offers, and rejections.
 
 ## Features
 
-- Application, response, interview, and offer metrics
-- Application and response trends for this month, 3 months, or 6 months
+- Separate positive-response, rejection, interview, and offer metrics
+- Application, positive-response, and rejection trends for this month, 3 months, or 6 months
+- Dedicated rejection dates for accurate rejection trends
 - Detailed pipeline stages through Interview 1, 2, 3, and 4+
-- Conversion flow from application to offer
+- Conversion flow from applications through assessment, interview, and offer, with rejections shown separately
 - Current-outcome breakdown
 - Searchable and filterable application table
 - Add, edit, and delete workflows
