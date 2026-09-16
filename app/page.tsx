@@ -5,7 +5,7 @@ import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
 import {
   Activity,
   AlertCircle,
-  ArrowRight,
+  ArrowDown,
   BriefcaseBusiness,
   CalendarClock,
   CalendarDays,
@@ -83,6 +83,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Toaster } from "@/components/ui/sonner";
 import {
   AuthScreen,
@@ -136,12 +137,14 @@ type Application = {
   interviewLink?: string;
   interviewDetails?: string;
   rejectedAt?: string;
+  hadAssessment: boolean;
 };
 
 type ApplicationDraft = Omit<Application, "id">;
 
-type StoredApplication = Omit<Application, "stage"> & {
+type StoredApplication = Omit<Application, "stage" | "hadAssessment"> & {
   stage: StoredStage;
+  hadAssessment?: boolean;
 };
 
 type ApplicationRow = {
@@ -161,12 +164,13 @@ type ApplicationRow = {
   interview_link: string | null;
   interview_details: string | null;
   rejected_at: string | null;
+  had_assessment: boolean;
   legacy_id: string | null;
 };
 
 const storageKey = "jobtrack.applications.v1";
 const applicationColumns =
-  "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,interview_at,interview_link,interview_details,rejected_at,legacy_id";
+  "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,interview_at,interview_link,interview_details,rejected_at,had_assessment,legacy_id";
 
 const activityConfig = {
   applications: {
@@ -224,6 +228,7 @@ function applicationFromRow(row: ApplicationRow): Application {
     interviewLink: row.interview_link ?? undefined,
     interviewDetails: row.interview_details ?? undefined,
     rejectedAt: row.rejected_at ?? undefined,
+    hadAssessment: row.had_assessment || row.stage === "Assessment",
   };
 }
 
@@ -243,6 +248,7 @@ function databaseFields(draft: ApplicationDraft) {
     interview_link: draft.interviewLink || null,
     interview_details: draft.interviewDetails || null,
     rejected_at: draft.rejectedAt || null,
+    had_assessment: draft.hadAssessment || draft.stage === "Assessment",
   };
 }
 
@@ -266,6 +272,8 @@ function normalizeStoredApplication(
   return {
     ...application,
     stage: application.stage === "Interview" ? "Interview 1" : application.stage,
+    hadAssessment:
+      application.hadAssessment || application.stage === "Assessment",
     rejectedAt:
       application.outcome === "Rejected"
         ? application.rejectedAt || application.responseAt || application.appliedAt
@@ -390,7 +398,9 @@ function buildMomentumSeries(
         .length,
       positiveResponses: applications.filter(
         (item) =>
-          (item.stage !== "Applied" || item.outcome === "Offer") &&
+          (item.hadAssessment ||
+            item.stage !== "Applied" ||
+            item.outcome === "Offer") &&
           isInBucket(item.responseAt),
       ).length,
       rejections: applications.filter(
@@ -478,27 +488,275 @@ function FlowNode({
   value,
   percentage,
   tone = "default",
+  className = "",
 }: {
   label: string;
   value: number;
   percentage: number;
-  tone?: "default" | "success" | "danger";
+  tone?: "default" | "success" | "danger" | "assessment" | "interview";
+  className?: string;
 }) {
   const toneClass =
     tone === "danger"
       ? "border-[#ff6b74]/25 bg-[#ff6b74]/8"
       : tone === "success"
         ? "border-[#5ee3c2]/25 bg-[#5ee3c2]/8"
-        : "border-white/[0.08] bg-white/[0.025]";
+          : tone === "assessment"
+            ? "border-[#7aa7ff]/25 bg-[#7aa7ff]/8"
+            : tone === "interview"
+              ? "border-[#ffb562]/25 bg-[#ffb562]/8"
+              : "border-white/[0.08] bg-white/[0.025]";
 
   return (
-    <div className={`min-w-40 rounded-xl border px-4 py-4 ${toneClass}`}>
+    <div
+      className={`flex min-w-40 flex-col justify-between rounded-xl border px-4 py-4 ${toneClass} ${className}`}
+    >
       <p className="text-sm font-medium text-muted-foreground">{label}</p>
       <div className="mt-2 flex items-end justify-between gap-4">
         <span className="text-2xl font-semibold tracking-[-0.04em]">{value}</span>
-        <span className="font-mono text-xs text-[#71869b]">{percentage}%</span>
+        <span className="shrink-0 rounded-full border border-white/[0.06] bg-black/10 px-2 py-0.5 text-[11px] font-medium tabular-nums text-[#8ba0b4]">
+          {percentage}%
+        </span>
       </div>
     </div>
+  );
+}
+
+function ApplicationFlow({
+  total,
+  assessments,
+  interviews,
+  directInterviews,
+  assessmentInterviews,
+  offers,
+  rejected,
+}: {
+  total: number;
+  assessments: number;
+  interviews: number;
+  directInterviews: number;
+  assessmentInterviews: number;
+  offers: number;
+  rejected: number;
+}) {
+  const percentage = (value: number) =>
+    total ? Math.round((value / total) * 100) : 0;
+
+  const nodes = {
+    applications: (
+      <FlowNode
+        label="Applications"
+        value={total}
+        percentage={total ? 100 : 0}
+        className="h-full"
+      />
+    ),
+    rejections: (
+      <FlowNode
+        label="Rejections"
+        value={rejected}
+        percentage={percentage(rejected)}
+        tone="danger"
+        className="h-full"
+      />
+    ),
+    assessments: (
+      <FlowNode
+        label="Assessments"
+        value={assessments}
+        percentage={percentage(assessments)}
+        tone="assessment"
+        className="h-full"
+      />
+    ),
+    interviews: (
+      <FlowNode
+        label="Interviews"
+        value={interviews}
+        percentage={percentage(interviews)}
+        tone="interview"
+        className="h-full"
+      />
+    ),
+    offers: (
+      <FlowNode
+        label="Offers"
+        value={offers}
+        percentage={percentage(offers)}
+        tone="success"
+        className="h-full"
+      />
+    ),
+  };
+
+  return (
+    <>
+      <div
+        className="relative hidden h-[310px] lg:block"
+        role="img"
+        aria-label="Applications can end in rejection, include an assessment, or move directly to interview. Assessments can also lead to interviews, and interviews can lead to offers."
+      >
+        <svg
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          viewBox="0 0 1000 310"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <defs>
+            <marker
+              id="flow-arrow-neutral"
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto"
+            >
+              <path d="M0 0L8 4L0 8Z" fill="#607991" />
+            </marker>
+            <marker
+              id="flow-arrow-danger"
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto"
+            >
+              <path d="M0 0L8 4L0 8Z" fill="#ff6b74" />
+            </marker>
+            <marker
+              id="flow-arrow-assessment"
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="7"
+              markerHeight="7"
+              orient="auto"
+            >
+              <path d="M0 0L8 4L0 8Z" fill="#7aa7ff" />
+            </marker>
+          </defs>
+
+          <path
+            d="M190 155H235"
+            fill="none"
+            stroke="#607991"
+            strokeOpacity=".55"
+            strokeWidth="1.5"
+            vectorEffect="non-scaling-stroke"
+          />
+          <path
+            d="M235 52V258"
+            fill="none"
+            stroke="#607991"
+            strokeOpacity=".42"
+            strokeWidth="1.5"
+            vectorEffect="non-scaling-stroke"
+          />
+          <path
+            d="M235 52H280"
+            fill="none"
+            stroke="#ff6b74"
+            strokeOpacity=".7"
+            strokeWidth="1.5"
+            markerEnd="url(#flow-arrow-danger)"
+            vectorEffect="non-scaling-stroke"
+          />
+          <path
+            d="M235 258H280"
+            fill="none"
+            stroke="#7aa7ff"
+            strokeOpacity=".75"
+            strokeWidth="1.5"
+            markerEnd="url(#flow-arrow-assessment)"
+            vectorEffect="non-scaling-stroke"
+          />
+          <path
+            d="M190 155C340 155 430 140 570 140"
+            fill="none"
+            stroke="#607991"
+            strokeOpacity=".72"
+            strokeWidth="1.5"
+            markerEnd="url(#flow-arrow-neutral)"
+            vectorEffect="non-scaling-stroke"
+          />
+          <path
+            d="M470 258C530 258 515 175 570 175"
+            fill="none"
+            stroke="#7aa7ff"
+            strokeOpacity=".75"
+            strokeWidth="1.5"
+            markerEnd="url(#flow-arrow-assessment)"
+            vectorEffect="non-scaling-stroke"
+          />
+          <path
+            d="M760 155H810"
+            fill="none"
+            stroke="#5ee3c2"
+            strokeOpacity=".7"
+            strokeWidth="1.5"
+            markerEnd="url(#flow-arrow-neutral)"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+
+        <div className="absolute left-0 top-1/2 z-10 h-[104px] w-[19%] -translate-y-1/2">
+          {nodes.applications}
+        </div>
+        <div className="absolute left-[28%] top-0 z-10 h-[104px] w-[19%]">
+          {nodes.rejections}
+        </div>
+        <div className="absolute bottom-0 left-[28%] z-10 h-[104px] w-[19%]">
+          {nodes.assessments}
+        </div>
+        <div className="absolute left-[57%] top-1/2 z-10 h-[104px] w-[19%] -translate-y-1/2">
+          {nodes.interviews}
+        </div>
+        <div className="absolute left-[81%] top-1/2 z-10 h-[104px] w-[19%] -translate-y-1/2">
+          {nodes.offers}
+        </div>
+
+        <span className="absolute left-[39%] top-[39%] z-20 -translate-x-1/2 rounded-full border border-white/[0.07] bg-[#0b1722] px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm">
+          Direct to interview · {directInterviews}
+        </span>
+        <span className="absolute left-[51%] top-[72%] z-20 -translate-x-1/2 rounded-full border border-[#7aa7ff]/15 bg-[#0b1722] px-2.5 py-1 text-[11px] text-[#9dbbfa] shadow-sm">
+          After assessment · {assessmentInterviews}
+        </span>
+      </div>
+
+      <div className="space-y-3 lg:hidden">
+        <div className="h-[96px]">{nodes.applications}</div>
+        <div className="flex justify-center">
+          <ArrowDown className="size-4 text-[#607991]" aria-hidden="true" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="h-[96px]">{nodes.rejections}</div>
+          <div className="h-[96px]">{nodes.assessments}</div>
+        </div>
+        <div className="rounded-xl border border-white/[0.07] bg-[#07131e] px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+            Paths into interviews
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full bg-white/[0.045] px-2.5 py-1 text-[#a8bacb]">
+              Direct from application · {directInterviews}
+            </span>
+            <span className="rounded-full bg-[#7aa7ff]/10 px-2.5 py-1 text-[#a8c4ff]">
+              After assessment · {assessmentInterviews}
+            </span>
+          </div>
+        </div>
+        <div className="flex justify-center">
+          <ArrowDown className="size-4 text-[#607991]" aria-hidden="true" />
+        </div>
+        <div className="h-[96px]">{nodes.interviews}</div>
+        <div className="flex justify-center">
+          <ArrowDown className="size-4 text-[#5ee3c2]/70" aria-hidden="true" />
+        </div>
+        <div className="h-[96px]">{nodes.offers}</div>
+      </div>
+    </>
   );
 }
 
@@ -635,6 +893,7 @@ function ApplicationDialog({
     interviewLink: "",
     interviewDetails: "",
     rejectedAt: "",
+    hadAssessment: false,
   };
 
   const [draft, setDraft] = useState<ApplicationDraft>(() =>
@@ -654,6 +913,7 @@ function ApplicationDialog({
           interviewLink: application.interviewLink,
           interviewDetails: application.interviewDetails,
           rejectedAt: application.rejectedAt,
+          hadAssessment: application.hadAssessment,
         }
       : emptyDraft,
   );
@@ -678,10 +938,35 @@ function ApplicationDialog({
       ...current,
       stage,
       outcome: stage === "Offer" ? "Offer" : current.outcome,
+      hadAssessment:
+        stage === "Assessment"
+          ? true
+          : stage === "Applied"
+            ? false
+            : current.hadAssessment,
       responseAt:
         stage !== "Applied" && !current.responseAt
           ? todayInputValue()
           : current.responseAt,
+    }));
+  }
+
+  function handleAssessmentChange(hadAssessment: boolean) {
+    setDraft((current) => ({
+      ...current,
+      hadAssessment,
+      stage:
+        hadAssessment && current.stage === "Applied"
+          ? "Assessment"
+          : !hadAssessment && current.stage === "Assessment"
+            ? "Applied"
+            : current.stage,
+      responseAt:
+        hadAssessment && !current.responseAt
+          ? todayInputValue()
+          : !hadAssessment && current.stage === "Assessment"
+            ? undefined
+            : current.responseAt,
     }));
   }
 
@@ -717,7 +1002,9 @@ function ApplicationDialog({
     if (!draft.company.trim() || !draft.role.trim() || !draft.appliedAt) return;
 
     const hasPositiveResponse =
-      draft.stage !== "Applied" || draft.outcome === "Offer";
+      draft.hadAssessment ||
+      draft.stage !== "Applied" ||
+      draft.outcome === "Offer";
 
     setSubmitting(true);
     const saved = await onSave(
@@ -816,6 +1103,23 @@ function ApplicationDialog({
                   </NativeSelectOption>
                 ))}
               </NativeSelect>
+            </div>
+            <div className="flex items-center justify-between gap-5 rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-3.5 sm:col-span-2">
+              <div className="min-w-0">
+                <Label htmlFor="had-assessment">
+                  Assessment in this process
+                </Label>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Turn this on for an online assessment, take-home, or technical
+                  test—even if you later reached an interview.
+                </p>
+              </div>
+              <Switch
+                id="had-assessment"
+                checked={draft.hadAssessment}
+                onCheckedChange={handleAssessmentChange}
+                aria-label="This application process included an assessment"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="applied-date">Applied date</Label>
@@ -1107,18 +1411,23 @@ function Dashboard({
   const metrics = useMemo(() => {
     const positiveResponses = applications.filter(
       (application) =>
+        application.hadAssessment ||
         application.stage !== "Applied" ||
         application.outcome === "Offer",
     ).length;
     const assessments = applications.filter(
       (application) =>
-        stageRank[application.stage] >= stageRank.Assessment ||
-        application.outcome === "Offer",
+        application.hadAssessment || application.stage === "Assessment",
     ).length;
-    const interviews = applications.filter(
+    const interviewApplications = applications.filter(
       (application) =>
         stageRank[application.stage] >= stageRank["Interview 1"],
+    );
+    const interviews = interviewApplications.length;
+    const assessmentInterviews = interviewApplications.filter(
+      (application) => application.hadAssessment,
     ).length;
+    const directInterviews = interviews - assessmentInterviews;
     const offers = applications.filter(
       (application) =>
         application.stage === "Offer" || application.outcome === "Offer",
@@ -1138,6 +1447,8 @@ function Dashboard({
       positiveResponses,
       assessments,
       interviews,
+      assessmentInterviews,
+      directInterviews,
       offers,
       rejected,
       active,
@@ -1327,9 +1638,6 @@ function Dashboard({
       },
     });
   }
-
-  const flowPercent = (value: number) =>
-    metrics.total ? Math.round((value / metrics.total) * 100) : 0;
 
   if (dataLoading) return <LoadingScreen />;
 
@@ -1667,52 +1975,19 @@ function Dashboard({
               How your applications flow
             </CardTitle>
             <CardDescription>
-              Assessment+ includes assessments, recruiter screens, and later stages
+              Applications can move directly to interviews or through an assessment
             </CardDescription>
           </CardHeader>
-          <CardContent className="overflow-x-auto px-5 py-6 sm:px-6">
-            <div className="min-w-[760px]">
-              <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] items-center gap-3">
-                <FlowNode
-                  label="Applications"
-                  value={metrics.total}
-                  percentage={100}
-                />
-                <ArrowRight className="size-4 text-[#496078]" aria-hidden="true" />
-                <FlowNode
-                  label="Assessments+"
-                  value={metrics.assessments}
-                  percentage={flowPercent(metrics.assessments)}
-                />
-                <ArrowRight className="size-4 text-[#496078]" aria-hidden="true" />
-                <FlowNode
-                  label="Interviews"
-                  value={metrics.interviews}
-                  percentage={flowPercent(metrics.interviews)}
-                />
-                <ArrowRight className="size-4 text-[#496078]" aria-hidden="true" />
-                <FlowNode
-                  label="Offers"
-                  value={metrics.offers}
-                  percentage={flowPercent(metrics.offers)}
-                  tone="success"
-                />
-              </div>
-
-              <div className="mt-4 grid grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] gap-3">
-                <div />
-                <div />
-                <div className="relative pt-6">
-                  <div className="absolute left-1/2 top-0 h-5 w-px bg-[#ff6b74]/30" />
-                  <FlowNode
-                    label="Rejections"
-                    value={metrics.rejected}
-                    percentage={flowPercent(metrics.rejected)}
-                    tone="danger"
-                  />
-                </div>
-              </div>
-            </div>
+          <CardContent className="px-5 py-6 sm:px-6">
+            <ApplicationFlow
+              total={metrics.total}
+              assessments={metrics.assessments}
+              interviews={metrics.interviews}
+              directInterviews={metrics.directInterviews}
+              assessmentInterviews={metrics.assessmentInterviews}
+              offers={metrics.offers}
+              rejected={metrics.rejected}
+            />
           </CardContent>
         </Card>
 
