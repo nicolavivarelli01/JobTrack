@@ -12,6 +12,7 @@ import {
   Check,
   CircleDot,
   Cloud,
+  Download,
   ExternalLink,
   Link2,
   Loader2,
@@ -211,6 +212,93 @@ const momentumDescriptions: Record<MomentumRange, string> = {
   "6mo": "Weekly applications, positive responses, and rejections over 6 months",
 };
 
+type CsvColumnDefinition = {
+  key: string;
+  label: string;
+  value: (application: Application) => string;
+};
+
+const csvColumns = [
+  {
+    key: "company",
+    label: "Company",
+    value: (application: Application) => application.company,
+  },
+  {
+    key: "role",
+    label: "Role",
+    value: (application: Application) => application.role,
+  },
+  {
+    key: "stage",
+    label: "Highest stage reached",
+    value: (application: Application) => application.stage,
+  },
+  {
+    key: "outcome",
+    label: "Current result",
+    value: (application: Application) => application.outcome,
+  },
+  {
+    key: "appliedAt",
+    label: "Applied date",
+    value: (application: Application) => application.appliedAt,
+  },
+  {
+    key: "responseAt",
+    label: "First positive response date",
+    value: (application: Application) => application.responseAt ?? "",
+  },
+  {
+    key: "rejectedAt",
+    label: "Rejection date",
+    value: (application: Application) => application.rejectedAt ?? "",
+  },
+  {
+    key: "hadAssessment",
+    label: "Assessment included",
+    value: (application: Application) =>
+      application.hadAssessment ? "Yes" : "No",
+  },
+  {
+    key: "source",
+    label: "Source",
+    value: (application: Application) => application.source ?? "",
+  },
+  {
+    key: "location",
+    label: "Location",
+    value: (application: Application) => application.location ?? "",
+  },
+  {
+    key: "jobUrl",
+    label: "Job posting URL",
+    value: (application: Application) => application.jobUrl ?? "",
+  },
+  {
+    key: "notes",
+    label: "Notes",
+    value: (application: Application) => application.notes ?? "",
+  },
+  {
+    key: "interviewAt",
+    label: "Interview date and time",
+    value: (application: Application) => application.interviewAt ?? "",
+  },
+  {
+    key: "interviewLink",
+    label: "Interview link",
+    value: (application: Application) => application.interviewLink ?? "",
+  },
+  {
+    key: "interviewDetails",
+    label: "Interview details",
+    value: (application: Application) => application.interviewDetails ?? "",
+  },
+] as const satisfies readonly CsvColumnDefinition[];
+
+type CsvColumnKey = (typeof csvColumns)[number]["key"];
+
 function applicationFromRow(row: ApplicationRow): Application {
   return {
     id: row.id,
@@ -340,6 +428,43 @@ function todayInputValue() {
   const now = new Date();
   const offset = now.getTimezoneOffset();
   return new Date(now.getTime() - offset * 60_000).toISOString().slice(0, 10);
+}
+
+function escapeCsvCell(value: string) {
+  const spreadsheetSafeValue = /^[\t\r\n ]*[=+\-@]/.test(value)
+    ? `'${value}`
+    : value;
+  return `"${spreadsheetSafeValue.replace(/"/g, '""')}"`;
+}
+
+function downloadApplicationsCsv(
+  applications: Application[],
+  selectedKeys: Set<CsvColumnKey>,
+) {
+  const selectedColumns = csvColumns.filter((column) =>
+    selectedKeys.has(column.key),
+  );
+  const rows = [
+    selectedColumns.map((column) => escapeCsvCell(column.label)),
+    ...applications.map((application) =>
+      selectedColumns.map((column) =>
+        escapeCsvCell(column.value(application)),
+      ),
+    ),
+  ];
+  const csv = rows.map((row) => row.join(",")).join("\r\n");
+  const blob = new Blob(["\uFEFF", csv], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const download = document.createElement("a");
+
+  download.href = url;
+  download.download = `jobtrack-applications-${todayInputValue()}.csv`;
+  document.body.appendChild(download);
+  download.click();
+  download.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function startOfLocalDay(value: Date) {
@@ -867,6 +992,129 @@ function IOSInstallHint() {
   );
 }
 
+function ExportCsvDialog({
+  open,
+  onOpenChange,
+  applications,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  applications: Application[];
+}) {
+  const [selectedColumns, setSelectedColumns] = useState<Set<CsvColumnKey>>(
+    () => new Set(csvColumns.map((column) => column.key)),
+  );
+
+  const allSelected = selectedColumns.size === csvColumns.length;
+  const canExport = applications.length > 0 && selectedColumns.size > 0;
+
+  function toggleColumn(key: CsvColumnKey) {
+    setSelectedColumns((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function selectAllColumns() {
+    setSelectedColumns(new Set(csvColumns.map((column) => column.key)));
+  }
+
+  function exportCsv() {
+    if (!canExport) return;
+
+    downloadApplicationsCsv(applications, selectedColumns);
+    toast.success(
+      `${applications.length} application${applications.length === 1 ? "" : "s"} exported`,
+    );
+    onOpenChange(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto border-white/10 bg-[#0c1722] p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b border-white/[0.07] px-6 py-5">
+          <div className="mb-1 flex size-10 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary">
+            <Download className="size-4" aria-hidden="true" />
+          </div>
+          <DialogTitle className="text-xl tracking-[-0.025em]">
+            Export applications
+          </DialogTitle>
+          <DialogDescription>
+            Choose the columns to include. This exports the {applications.length}{" "}
+            application{applications.length === 1 ? "" : "s"} currently shown by
+            your search and status filters.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="px-6 py-6">
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-foreground">CSV columns</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {selectedColumns.size} of {csvColumns.length} selected
+              </p>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={selectAllColumns}
+                disabled={allSelected}
+              >
+                Select all
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedColumns(new Set())}
+                disabled={selectedColumns.size === 0}
+              >
+                Clear
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            {csvColumns.map((column) => (
+              <label
+                key={column.key}
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-white/[0.07] bg-white/[0.025] px-3.5 py-3 text-sm transition-colors hover:border-white/[0.13] hover:bg-white/[0.04]"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedColumns.has(column.key)}
+                  onChange={() => toggleColumn(column.key)}
+                  className="size-4 shrink-0 accent-[#5ee3c2]"
+                />
+                <span className="text-foreground">{column.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <DialogFooter className="border-t border-white/[0.07] px-6 py-4">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
+          <Button type="button" onClick={exportCsv} disabled={!canExport}>
+            <Download aria-hidden="true" />
+            Export {applications.length || ""} application
+            {applications.length === 1 ? "" : "s"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ApplicationDialog({
   open,
   onOpenChange,
@@ -1319,6 +1567,7 @@ function Dashboard({
   const [momentumRange, setMomentumRange] =
     useState<MomentumRange>("3mo");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [editingApplication, setEditingApplication] =
     useState<Application | null>(null);
 
@@ -2002,6 +2251,15 @@ function Dashboard({
               </CardDescription>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setExportDialogOpen(true)}
+                disabled={filteredApplications.length === 0}
+              >
+                <Download aria-hidden="true" />
+                Export CSV
+              </Button>
               <div className="relative min-w-0 sm:w-64">
                 <Search
                   className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -2311,6 +2569,11 @@ function Dashboard({
         onOpenChange={setDialogOpen}
         application={editingApplication}
         onSave={saveApplication}
+      />
+      <ExportCsvDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+        applications={filteredApplications}
       />
     </div>
   );
