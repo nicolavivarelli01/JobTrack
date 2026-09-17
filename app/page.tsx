@@ -128,6 +128,7 @@ type Application = {
   role: string;
   stage: Stage;
   outcome: Outcome;
+  companyStatus?: string;
   appliedAt: string;
   responseAt?: string;
   source?: string;
@@ -155,6 +156,7 @@ type ApplicationRow = {
   role: string;
   stage: Stage;
   outcome: Outcome;
+  company_status: string | null;
   applied_at: string;
   response_at: string | null;
   source: string | null;
@@ -171,7 +173,7 @@ type ApplicationRow = {
 
 const storageKey = "jobtrack.applications.v1";
 const applicationColumns =
-  "id,user_id,company,role,stage,outcome,applied_at,response_at,source,location,job_url,notes,interview_at,interview_link,interview_details,rejected_at,had_assessment,legacy_id";
+  "id,user_id,company,role,stage,outcome,company_status,applied_at,response_at,source,location,job_url,notes,interview_at,interview_link,interview_details,rejected_at,had_assessment,legacy_id";
 
 const activityConfig = {
   applications: {
@@ -240,6 +242,11 @@ const csvColumns = [
     value: (application: Application) => application.outcome,
   },
   {
+    key: "companyStatus",
+    label: "Company status",
+    value: (application: Application) => application.companyStatus ?? "",
+  },
+  {
     key: "appliedAt",
     label: "Applied date",
     value: (application: Application) => application.appliedAt,
@@ -306,6 +313,7 @@ function applicationFromRow(row: ApplicationRow): Application {
     role: row.role,
     stage: row.stage,
     outcome: row.outcome,
+    companyStatus: row.company_status ?? undefined,
     appliedAt: row.applied_at,
     responseAt: row.response_at ?? undefined,
     source: row.source ?? undefined,
@@ -326,6 +334,7 @@ function databaseFields(draft: ApplicationDraft) {
     role: draft.role,
     stage: draft.stage,
     outcome: draft.outcome,
+    company_status: draft.companyStatus || null,
     applied_at: draft.appliedAt,
     response_at: draft.responseAt || null,
     source: draft.source || null,
@@ -1131,6 +1140,7 @@ function ApplicationDialog({
     role: "",
     stage: "Applied",
     outcome: "Active",
+    companyStatus: "",
     appliedAt: todayInputValue(),
     responseAt: "",
     source: "",
@@ -1151,6 +1161,7 @@ function ApplicationDialog({
           role: application.role,
           stage: application.stage,
           outcome: application.outcome,
+          companyStatus: application.companyStatus,
           appliedAt: application.appliedAt,
           responseAt: application.responseAt,
           source: application.source,
@@ -1260,6 +1271,7 @@ function ApplicationDialog({
         ...draft,
         company: draft.company.trim(),
         role: draft.role.trim(),
+        companyStatus: draft.companyStatus?.trim(),
         source: draft.source?.trim(),
         location: draft.location?.trim(),
         jobUrl: draft.jobUrl?.trim(),
@@ -1351,6 +1363,24 @@ function ApplicationDialog({
                   </NativeSelectOption>
                 ))}
               </NativeSelect>
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="company-status">
+                Company status <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="company-status"
+                value={draft.companyStatus ?? ""}
+                onChange={(event) =>
+                  updateField("companyStatus", event.target.value)
+                }
+                placeholder="Submitted, Resume Screening, Under Review…"
+                maxLength={200}
+              />
+              <p className="text-xs leading-5 text-muted-foreground">
+                Use the company&apos;s exact wording. This is free text, so you can
+                enter any label shown in its portal or emails.
+              </p>
             </div>
             <div className="flex items-center justify-between gap-5 rounded-xl border border-white/[0.08] bg-white/[0.025] px-4 py-3.5 sm:col-span-2">
               <div className="min-w-0">
@@ -1743,6 +1773,7 @@ function Dashboard({
           [
             application.company,
             application.role,
+            application.companyStatus,
             application.location,
             application.source,
             application.notes,
@@ -2362,6 +2393,23 @@ function Dashboard({
                           </Badge>
                         </div>
 
+                        {application.companyStatus && (
+                          <div className="mt-3 flex items-start gap-2 rounded-lg border border-[#7aa7ff]/20 bg-[#7aa7ff]/[0.055] px-3 py-2.5">
+                            <CircleDot
+                              className="mt-0.5 size-3.5 shrink-0 text-[#7aa7ff]"
+                              aria-hidden="true"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-medium uppercase tracking-[0.1em] text-[#71869b]">
+                                Company status
+                              </p>
+                              <p className="mt-0.5 break-words text-sm text-[#b8caff]">
+                                {application.companyStatus}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
                         {application.interviewAt && (
                           <div className="mt-4 rounded-lg border border-[#ffb562]/20 bg-[#ffb562]/[0.055] px-3 py-3">
                             <div className="flex items-start justify-between gap-3">
@@ -2486,6 +2534,20 @@ function Dashboard({
                             {application.role}
                             {application.location ? ` · ${application.location}` : ""}
                           </p>
+                          {application.companyStatus && (
+                            <div
+                              className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-md border border-[#7aa7ff]/20 bg-[#7aa7ff]/[0.055] px-2 py-1 text-xs text-[#b8caff]"
+                              title={`Company status: ${application.companyStatus}`}
+                            >
+                              <CircleDot
+                                className="size-3 shrink-0 text-[#7aa7ff]"
+                                aria-hidden="true"
+                              />
+                              <span className="truncate">
+                                Company status: {application.companyStatus}
+                              </span>
+                            </div>
+                          )}
                           {application.interviewAt && (
                             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#d9ad76]">
                               <span className="flex items-center gap-1.5">
