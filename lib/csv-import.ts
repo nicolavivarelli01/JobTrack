@@ -108,8 +108,16 @@ export type ColumnMapping = Record<ImportField, number | null>;
 export type DateOrder = "mdy" | "dmy";
 export type ValueMap<T extends string> = Record<string, T>;
 
+/**
+ * A column that records reaching a stage, for spreadsheets that track
+ * progress with one column per round ("1st contact", "Phase 1", …) filled in
+ * from left to right instead of a single status column.
+ */
+export type ProgressColumn = { column: number; stage: Stage };
+
 export type ImportOptions = {
   mapping: ColumnMapping;
+  progressColumns: ProgressColumn[];
   dateOrder: DateOrder;
   stageValues: ValueMap<Stage>;
   outcomeValues: ValueMap<Outcome>;
@@ -437,6 +445,59 @@ export function guessOutcome(raw: string): { value: Outcome; recognized: boolean
   return { value: "Active", recognized: false };
 }
 
+// Cells like "No" or "-" in a progress column mean the round did not happen.
+const negativeCellPattern = /^(no|n|false|0|-|–|—|n\/a|na|none|not yet)$/i;
+
+export function isProgressCellFilled(value: string) {
+  return value !== "" && !negativeCellPattern.test(value);
+}
+
+/**
+ * Suggests progress columns from header names. Stages increase from left to
+ * right, so "Phase 1, Phase 2, Final Interview" becomes Interview 1, 2, 3
+ * even though "Final Interview" alone would read as a first interview.
+ */
+export function guessProgressColumns(
+  headers: string[],
+  mapping: ColumnMapping,
+): ProgressColumn[] {
+  const mapped = new Set(Object.values(mapping));
+  const progressHeader =
+    /contact|phase|round|interview|screen|onsite|on-site|final|assessment|\btest\b|\boa\b|take[- ]?home|offer|stage\s*\d/i;
+  const progress: ProgressColumn[] = [];
+  let previous = stages.indexOf("Applied");
+
+  headers.forEach((header, column) => {
+    if (mapped.has(column) || !progressHeader.test(header)) return;
+    const guess = guessStage(header);
+    // Assessments sit beside the interview path (tracked as hadAssessment),
+    // so they neither follow nor advance the left-to-right sequence.
+    if (guess.recognized && guess.value === "Assessment") {
+      progress.push({ column, stage: "Assessment" });
+      return;
+    }
+    // Unnamed rounds ("Phase 1") start at a recruiter screen, then count up
+    // through interviews.
+    const fallback = stages.indexOf(
+      progress.length > 0 ? "Interview 1" : "Recruiter screen",
+    );
+    const next = Math.max(
+      previous + 1,
+      guess.recognized && guess.value !== "Applied"
+        ? stages.indexOf(guess.value)
+        : fallback,
+    );
+    const stage =
+      guess.value === "Offer" && guess.recognized
+        ? "Offer"
+        : stages[Math.min(next, stages.indexOf("Interview 4+"))];
+    progress.push({ column, stage });
+    previous = stages.indexOf(stage);
+  });
+
+  return progress;
+}
+
 export function distinctValues(rows: string[][], column: number | null) {
   if (column === null) return [];
   const seen = new Map<string, string>();
@@ -463,9 +524,10 @@ export function buildImportPreview(
   existing: Application[],
 ): ImportPreview {
   const { mapping, dateOrder } = options;
-  const mappedColumns = new Set(
-    Object.values(mapping).filter((column): column is number => column !== null),
-  );
+  const mappedColumns = new Set([
+    ...Object.values(mapping).filter((column): column is number => column !== null),
+    ...options.progressColumns.map((progress) => progress.column),
+  ]);
   const seen = new Set(existing.map(duplicateKey));
   const preview: ImportPreview = { rows: [], errors: [], duplicates: [] };
 
@@ -515,15 +577,47 @@ export function buildImportPreview(
     let stage: Stage = (rawStage && options.stageValues[rawStage]) || "Applied";
     let outcome: Outcome =
       (rawOutcome && options.outcomeValues[rawOutcome]) || "Active";
+
+    // The furthest filled progress column is the highest stage reached. A
+    // cell saying "Rejected" or "Withdrew" ends the process there instead.
+    let progressAssessment = false;
+    let firstProgressDate: string | undefined;
+    for (const progress of options.progressColumns) {
+      const value = row[progress.column]?.trim() ?? "";
+      if (!isProgressCellFilled(value)) continue;
+
+      const ending = guessOutcome(value);
+      if (
+        ending.recognized &&
+        (ending.value === "Rejected" || ending.value === "Withdrawn")
+      ) {
+        outcome = ending.value;
+        continue;
+      }
+      if (ending.recognized && ending.value === "Offer") outcome = "Offer";
+
+      firstProgressDate ??= parseDateValue(value, dateOrder) ?? undefined;
+      if (progress.stage === "Assessment") progressAssessment = true;
+      if (stages.indexOf(progress.stage) > stages.indexOf(stage)) {
+        stage = progress.stage;
+      }
+    }
+
     if (outcome === "Offer") stage = "Offer";
     if (stage === "Offer") outcome = "Offer";
 
     const hadAssessment =
       stage === "Assessment" ||
+      progressAssessment ||
       (mapping.hadAssessment !== null && parseBoolean(cell("hadAssessment")));
     const hasPositiveResponse =
       hadAssessment || stage !== "Applied" || outcome === "Offer";
-    const responseAt = date("responseAt", "Response date");
+    const responseAt = date("responseAt", "Response date") ?? firstProgressDate;
+    if (responseAt && !hasPositiveResponse && cell("responseAt")) {
+      warnings.push(
+        "Response date ignored because nothing shows the application got past Applied",
+      );
+    }
     const rejectedAt = date("rejectedAt", "Rejection date");
 
     const interviewRaw = cell("interviewAt");

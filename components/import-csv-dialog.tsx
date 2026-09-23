@@ -7,7 +7,9 @@ import {
   Check,
   FileSpreadsheet,
   Loader2,
+  Plus,
   Upload,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -39,13 +41,16 @@ import {
   distinctValues,
   guessMapping,
   guessOutcome,
+  guessProgressColumns,
   guessStage,
   importFields,
+  isProgressCellFilled,
   normalizeHeader,
   parseCsv,
   type ColumnMapping,
   type DateOrder,
   type ImportField,
+  type ProgressColumn,
   type ValueMap,
 } from "@/lib/csv-import";
 
@@ -53,6 +58,7 @@ type DateOrderChoice = DateOrder | "auto";
 
 type SavedImportSettings = {
   mapping: Partial<Record<ImportField, string>>;
+  progressColumns?: { header: string; stage: Stage }[];
   dateOrder: DateOrderChoice;
   stageOverrides: ValueMap<Stage>;
   outcomeOverrides: ValueMap<Outcome>;
@@ -115,6 +121,7 @@ export function ImportCsvDialog({
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<string[][]>([]);
   const [mapping, setMapping] = useState<ColumnMapping | null>(null);
+  const [progressColumns, setProgressColumns] = useState<ProgressColumn[]>([]);
   const [dateOrderChoice, setDateOrderChoice] =
     useState<DateOrderChoice>("auto");
   const [stageOverrides, setStageOverrides] = useState<ValueMap<Stage>>({});
@@ -158,10 +165,18 @@ export function ImportCsvDialog({
       ) as ColumnMapping;
     }
 
+    const nextProgressColumns = saved
+      ? (saved.progressColumns ?? []).flatMap(({ header, stage }) => {
+          const column = headerRow.indexOf(header);
+          return column === -1 ? [] : [{ column, stage }];
+        })
+      : guessProgressColumns(headerRow, nextMapping);
+
     setFileName(file.name);
     setHeaders(headerRow);
     setRows(dataRows);
     setMapping(nextMapping);
+    setProgressColumns(nextProgressColumns);
     setDateOrderChoice(saved?.dateOrder ?? "auto");
     setStageOverrides(saved?.stageOverrides ?? {});
     setOutcomeOverrides(saved?.outcomeOverrides ?? {});
@@ -184,12 +199,14 @@ export function ImportCsvDialog({
 
   const detectedDateOrder = useMemo(() => {
     if (!mapping) return { order: "mdy" as DateOrder, ambiguous: false };
-    const values = dateFields.flatMap((field) => {
-      const column = mapping[field];
-      return column === null ? [] : rows.map((row) => row[column] ?? "");
-    });
-    return detectDateOrder(values);
-  }, [mapping, rows]);
+    const columns = [
+      ...dateFields.map((field) => mapping[field]),
+      ...progressColumns.map((progress) => progress.column),
+    ].filter((column): column is number => column !== null);
+    return detectDateOrder(
+      columns.flatMap((column) => rows.map((row) => row[column] ?? "")),
+    );
+  }, [mapping, progressColumns, rows]);
 
   const dateOrder =
     dateOrderChoice === "auto" ? detectedDateOrder.order : dateOrderChoice;
@@ -236,6 +253,7 @@ export function ImportCsvDialog({
       rows,
       {
         mapping,
+        progressColumns,
         dateOrder,
         stageValues,
         outcomeValues,
@@ -253,6 +271,7 @@ export function ImportCsvDialog({
     headers,
     mapping,
     outcomeValues,
+    progressColumns,
     rows,
     skipDuplicates,
     stageValues,
@@ -265,6 +284,7 @@ export function ImportCsvDialog({
     ? headers.filter(
         (_, column) =>
           !Object.values(mapping).includes(column) &&
+          !progressColumns.some((progress) => progress.column === column) &&
           rows.some((row) => row[column]),
       ).length
     : 0;
@@ -292,6 +312,30 @@ export function ImportCsvDialog({
     );
   }
 
+  function updateProgressColumn(index: number, update: Partial<ProgressColumn>) {
+    setProgressColumns((current) =>
+      current.map((progress, position) =>
+        position === index ? { ...progress, ...update } : progress,
+      ),
+    );
+  }
+
+  function addProgressColumn() {
+    setProgressColumns((current) => {
+      const used = new Set(current.map((progress) => progress.column));
+      const column = headers.findIndex((_, index) => !used.has(index));
+      const last = current.at(-1)?.stage;
+      const stage =
+        stages[
+          Math.min(
+            last ? stages.indexOf(last) + 1 : stages.indexOf("Recruiter screen"),
+            stages.length - 1,
+          )
+        ];
+      return column === -1 ? current : [...current, { column, stage }];
+    });
+  }
+
   async function handleImport() {
     if (!preview || !mapping || !canImport) return;
 
@@ -307,6 +351,10 @@ export function ImportCsvDialog({
           return column === null ? [] : [[field.key, headers[column]]];
         }),
       ),
+      progressColumns: progressColumns.map(({ column, stage }) => ({
+        header: headers[column],
+        stage,
+      })),
       dateOrder: dateOrderChoice,
       stageOverrides,
       outcomeOverrides,
@@ -435,6 +483,103 @@ export function ImportCsvDialog({
                   );
                 })}
               </div>
+            </section>
+
+            <section>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-medium text-foreground">
+                    Progress columns
+                  </h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    For sheets with one column per round, filled in as you
+                    advance. The furthest filled column sets the stage, and the
+                    first date found becomes the response date. &ldquo;No&rdquo;
+                    or &ldquo;-&rdquo; count as empty; &ldquo;Rejected&rdquo;
+                    marks the result.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addProgressColumn}
+                  className="shrink-0"
+                >
+                  <Plus aria-hidden="true" />
+                  Add
+                </Button>
+              </div>
+              {progressColumns.length > 0 && (
+                <div className="mt-3 overflow-hidden rounded-lg border border-white/[0.07]">
+                  {progressColumns.map((progress, index) => {
+                    const filled = rows.filter((row) =>
+                      isProgressCellFilled(row[progress.column]?.trim() ?? ""),
+                    ).length;
+                    return (
+                      <div
+                        key={index}
+                        className="grid items-center gap-2 border-b border-white/[0.06] px-3.5 py-2.5 last:border-b-0 sm:grid-cols-[1fr_auto_auto]"
+                      >
+                        <div className="min-w-0">
+                          <NativeSelect
+                            size="sm"
+                            className="w-full"
+                            aria-label={`Progress column ${index + 1}`}
+                            value={progress.column}
+                            onChange={(event) =>
+                              updateProgressColumn(index, {
+                                column: Number(event.target.value),
+                              })
+                            }
+                          >
+                            {headers.map((header, column) => (
+                              <NativeSelectOption key={column} value={column}>
+                                {header || `Column ${column + 1}`}
+                              </NativeSelectOption>
+                            ))}
+                          </NativeSelect>
+                          <p className="mt-1 text-xs text-[#71869b]">
+                            Filled in {filled} of {rows.length} rows
+                          </p>
+                        </div>
+                        <NativeSelect
+                          size="sm"
+                          className="w-full sm:w-44"
+                          aria-label={`Stage reached for ${headers[progress.column]}`}
+                          value={progress.stage}
+                          onChange={(event) =>
+                            updateProgressColumn(index, {
+                              stage: event.target.value as Stage,
+                            })
+                          }
+                        >
+                          {stages
+                            .filter((stage) => stage !== "Applied")
+                            .map((stage) => (
+                              <NativeSelectOption key={stage} value={stage}>
+                                {stage}
+                              </NativeSelectOption>
+                            ))}
+                        </NativeSelect>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Remove ${headers[progress.column]}`}
+                          onClick={() =>
+                            setProgressColumns((current) =>
+                              current.filter((_, position) => position !== index),
+                            )
+                          }
+                        >
+                          <X aria-hidden="true" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             <section className="grid gap-5 sm:grid-cols-2">
