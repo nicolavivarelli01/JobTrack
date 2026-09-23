@@ -15,6 +15,7 @@ A personal job-search dashboard for tracking applications, positive employer res
 - Pin any number of applications to keep them at the top of the list
 - Optional free-text company status for portal-specific labels
 - CSV export of the currently filtered applications with selectable columns
+- CSV and Excel (.xlsx) import from any spreadsheet: columns are auto-matched by name and adjustable, status values (e.g. "Ghosted", "2nd round") are mapped to stages and results, spreadsheets that track rounds as one column per phase ("1st contact", "Phase 1", …) set the stage from the furthest filled column, day/month date order is detected, Excel hyperlinks become job-posting links, red cells in progress columns mark rejections (dated to the applied date when the cell has no date), duplicates are skipped, and the mapping is remembered for the next file with the same columns
 - Add, edit, and delete workflows
 - Private notes for recruiter details, next steps, and reminders
 - Optional interview date, time, meeting link, and preparation details

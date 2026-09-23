@@ -28,6 +28,7 @@ import {
   Target,
   Trash2,
   TrendingUp,
+  Upload,
   X,
 } from "lucide-react";
 import {
@@ -99,19 +100,15 @@ import {
   isSupabaseConfigured,
 } from "@/lib/supabase";
 import { CompanyAvatar } from "@/components/company-avatar";
-
-const stages = [
-  "Applied",
-  "Assessment",
-  "Recruiter screen",
-  "Interview 1",
-  "Interview 2",
-  "Interview 3",
-  "Interview 4+",
-  "Offer",
-] as const;
-
-const outcomes = ["Active", "Rejected", "Offer", "Withdrawn"] as const;
+import { ImportCsvDialog } from "@/components/import-csv-dialog";
+import {
+  outcomes,
+  stages,
+  type Application,
+  type ApplicationDraft,
+  type Outcome,
+  type Stage,
+} from "@/lib/applications";
 
 const momentumRanges = [
   { value: "month", label: "This month" },
@@ -119,33 +116,8 @@ const momentumRanges = [
   { value: "6mo", label: "6mo" },
 ] as const;
 
-type Stage = (typeof stages)[number];
-type Outcome = (typeof outcomes)[number];
 type MomentumRange = (typeof momentumRanges)[number]["value"];
 type StoredStage = Stage | "Interview";
-
-type Application = {
-  id: string;
-  company: string;
-  role: string;
-  stage: Stage;
-  outcome: Outcome;
-  companyStatus?: string;
-  appliedAt: string;
-  responseAt?: string;
-  source?: string;
-  location?: string;
-  jobUrl?: string;
-  notes?: string;
-  interviewAt?: string;
-  interviewLink?: string;
-  interviewDetails?: string;
-  rejectedAt?: string;
-  hadAssessment: boolean;
-  pinned: boolean;
-};
-
-type ApplicationDraft = Omit<Application, "id" | "pinned">;
 
 type StoredApplication = Omit<Application, "stage" | "hadAssessment" | "pinned"> & {
   stage: StoredStage;
@@ -1626,6 +1598,7 @@ function Dashboard({
     useState<MomentumRange>("month");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [editingApplication, setEditingApplication] =
     useState<Application | null>(null);
 
@@ -1881,6 +1854,45 @@ function Dashboard({
         description: errorMessage(caughtError, "Please try again."),
       });
       return false;
+    }
+  }
+
+  async function importApplications(
+    drafts: ApplicationDraft[],
+  ): Promise<boolean> {
+    const imported: Application[] = [];
+
+    try {
+      for (let start = 0; start < drafts.length; start += 200) {
+        const { data, error } = await supabase
+          .from("applications")
+          .insert(
+            drafts
+              .slice(start, start + 200)
+              .map((draft) => ({ user_id: user.id, ...databaseFields(draft) })),
+          )
+          .select(applicationColumns);
+
+        if (error) throw error;
+        imported.push(...((data ?? []) as ApplicationRow[]).map(applicationFromRow));
+      }
+
+      toast.success(
+        `${imported.length} application${imported.length === 1 ? "" : "s"} imported`,
+      );
+      return true;
+    } catch (caughtError) {
+      toast.error(
+        imported.length
+          ? `Import stopped after ${imported.length} of ${drafts.length} applications`
+          : "Applications could not be imported",
+        { description: errorMessage(caughtError, "Please try again.") },
+      );
+      return false;
+    } finally {
+      if (imported.length) {
+        setApplications((current) => [...imported, ...current]);
+      }
     }
   }
 
@@ -2338,6 +2350,14 @@ function Dashboard({
               <Button
                 type="button"
                 variant="outline"
+                onClick={() => setImportDialogOpen(true)}
+              >
+                <Upload aria-hidden="true" />
+                Import
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => setExportDialogOpen(true)}
                 disabled={filteredApplications.length === 0}
               >
@@ -2693,6 +2713,13 @@ function Dashboard({
         open={exportDialogOpen}
         onOpenChange={setExportDialogOpen}
         applications={filteredApplications}
+      />
+      <ImportCsvDialog
+        key={`import-${importDialogOpen}`}
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        existingApplications={applications}
+        onImport={importApplications}
       />
     </div>
   );
