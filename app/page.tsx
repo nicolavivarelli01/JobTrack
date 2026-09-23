@@ -19,6 +19,8 @@ import {
   LogOut,
   MoreHorizontal,
   Pencil,
+  Pin,
+  PinOff,
   Plus,
   Search,
   Share2,
@@ -140,11 +142,12 @@ type Application = {
   interviewDetails?: string;
   rejectedAt?: string;
   hadAssessment: boolean;
+  pinned: boolean;
 };
 
-type ApplicationDraft = Omit<Application, "id">;
+type ApplicationDraft = Omit<Application, "id" | "pinned">;
 
-type StoredApplication = Omit<Application, "stage" | "hadAssessment"> & {
+type StoredApplication = Omit<Application, "stage" | "hadAssessment" | "pinned"> & {
   stage: StoredStage;
   hadAssessment?: boolean;
 };
@@ -168,12 +171,13 @@ type ApplicationRow = {
   interview_details: string | null;
   rejected_at: string | null;
   had_assessment: boolean;
+  pinned: boolean;
   legacy_id: string | null;
 };
 
 const storageKey = "jobtrack.applications.v1";
 const applicationColumns =
-  "id,user_id,company,role,stage,outcome,company_status,applied_at,response_at,source,location,job_url,notes,interview_at,interview_link,interview_details,rejected_at,had_assessment,legacy_id";
+  "id,user_id,company,role,stage,outcome,company_status,applied_at,response_at,source,location,job_url,notes,interview_at,interview_link,interview_details,rejected_at,had_assessment,pinned,legacy_id";
 
 const activityConfig = {
   applications: {
@@ -325,6 +329,7 @@ function applicationFromRow(row: ApplicationRow): Application {
     interviewDetails: row.interview_details ?? undefined,
     rejectedAt: row.rejected_at ?? undefined,
     hadAssessment: row.had_assessment || row.stage === "Assessment",
+    pinned: row.pinned,
   };
 }
 
@@ -375,6 +380,7 @@ function normalizeStoredApplication(
       application.outcome === "Rejected"
         ? application.rejectedAt || application.responseAt || application.appliedAt
         : application.rejectedAt,
+    pinned: false,
   };
 }
 
@@ -912,13 +918,24 @@ function EmptyApplications({ onAdd }: { onAdd: () => void }) {
   );
 }
 
+function PinnedIndicator() {
+  return (
+    <span title="Pinned" className="shrink-0 text-[#ffb562]">
+      <Pin className="size-3.5 fill-current" aria-hidden="true" />
+      <span className="sr-only">Pinned</span>
+    </span>
+  );
+}
+
 function ApplicationActions({
   application,
   onEdit,
+  onTogglePin,
   onDelete,
 }: {
   application: Application;
   onEdit: (application: Application) => void;
+  onTogglePin: (application: Application) => void;
   onDelete: (application: Application) => void;
 }) {
   return (
@@ -935,6 +952,17 @@ function ApplicationActions({
       <DropdownMenuContent align="end" className="w-36">
         <DropdownMenuItem onSelect={() => onEdit(application)}>
           <Pencil aria-hidden="true" /> Edit
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onTogglePin(application)}>
+          {application.pinned ? (
+            <>
+              <PinOff aria-hidden="true" /> Unpin
+            </>
+          ) : (
+            <>
+              <Pin aria-hidden="true" /> Pin
+            </>
+          )}
         </DropdownMenuItem>
         <DropdownMenuItem
           variant="destructive"
@@ -1795,8 +1823,9 @@ function Dashboard({
       })
       .sort(
         (a, b) =>
+          Number(b.pinned) - Number(a.pinned) ||
           parseLocalDate(b.appliedAt).getTime() -
-          parseLocalDate(a.appliedAt).getTime(),
+            parseLocalDate(a.appliedAt).getTime(),
       );
   }, [applications, search, statusFilter]);
 
@@ -1862,6 +1891,7 @@ function Dashboard({
         id: application.id,
         user_id: user.id,
         ...databaseFields(application),
+        pinned: application.pinned,
       })
       .select(applicationColumns)
       .single();
@@ -1883,6 +1913,29 @@ function Dashboard({
       return restored;
     });
     toast.success("Application restored");
+  }
+
+  async function togglePinned(application: Application) {
+    const pinned = !application.pinned;
+    const setPinned = (value: boolean) =>
+      setApplications((current) =>
+        current.map((item) =>
+          item.id === application.id ? { ...item, pinned: value } : item,
+        ),
+      );
+    setPinned(pinned);
+
+    const { error } = await supabase
+      .from("applications")
+      .update({ pinned })
+      .eq("id", application.id);
+
+    if (error) {
+      setPinned(!pinned);
+      toast.error(`Application could not be ${pinned ? "pinned" : "unpinned"}`, {
+        description: error.message,
+      });
+    }
   }
 
   async function deleteApplication(application: Application) {
@@ -2352,6 +2405,7 @@ function Dashboard({
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
+                              {application.pinned && <PinnedIndicator />}
                               <h3 className="truncate font-medium text-foreground">
                                 {application.company}
                               </h3>
@@ -2374,6 +2428,7 @@ function Dashboard({
                           <ApplicationActions
                             application={application}
                             onEdit={openEditApplication}
+                            onTogglePin={togglePinned}
                             onDelete={deleteApplication}
                           />
                         </div>
@@ -2515,6 +2570,7 @@ function Dashboard({
                         />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
+                            {application.pinned && <PinnedIndicator />}
                             <p className="truncate font-medium text-foreground">
                               {application.company}
                             </p>
@@ -2604,6 +2660,7 @@ function Dashboard({
                       <ApplicationActions
                         application={application}
                         onEdit={openEditApplication}
+                        onTogglePin={togglePinned}
                         onDelete={deleteApplication}
                       />
                     </TableCell>

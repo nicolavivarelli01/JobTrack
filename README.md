@@ -12,6 +12,7 @@ A personal job-search dashboard for tracking applications, positive employer res
 - Branching flow for rejections, optional assessments, direct interviews, and offers
 - Current-outcome breakdown
 - Searchable and filterable application table
+- Pin any number of applications to keep them at the top of the list
 - Optional free-text company status for portal-specific labels
 - CSV export of the currently filtered applications with selectable columns
 - Add, edit, and delete workflows
