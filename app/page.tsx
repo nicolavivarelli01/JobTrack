@@ -1595,7 +1595,7 @@ function Dashboard({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [momentumRange, setMomentumRange] =
-    useState<MomentumRange>("3mo");
+    useState<MomentumRange>("month");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [editingApplication, setEditingApplication] =
