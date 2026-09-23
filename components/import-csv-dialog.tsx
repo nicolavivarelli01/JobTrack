@@ -46,11 +46,12 @@ import {
   importFields,
   isProgressCellFilled,
   normalizeHeader,
-  parseCsv,
+  sheetFromCsv,
   type ColumnMapping,
   type DateOrder,
   type ImportField,
   type ProgressColumn,
+  type SheetData,
   type ValueMap,
 } from "@/lib/csv-import";
 
@@ -63,6 +64,17 @@ type SavedImportSettings = {
   stageOverrides: ValueMap<Stage>;
   outcomeOverrides: ValueMap<Outcome>;
 };
+
+const emptyHeaders: string[] = [];
+const emptyRows: string[][] = [];
+
+function isExcelFile(file: File) {
+  return (
+    /\.xlsx$/i.test(file.name) ||
+    file.type ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+}
 
 const savedSettingsPrefix = "jobtrack.csv-import.v1:";
 const dateFields: ImportField[] = [
@@ -118,8 +130,8 @@ export function ImportCsvDialog({
 }) {
   const [fileName, setFileName] = useState("");
   const [fileError, setFileError] = useState<string | null>(null);
-  const [headers, setHeaders] = useState<string[]>([]);
-  const [rows, setRows] = useState<string[][]>([]);
+  const [sheet, setSheet] = useState<SheetData | null>(null);
+  const [reading, setReading] = useState(false);
   const [mapping, setMapping] = useState<ColumnMapping | null>(null);
   const [progressColumns, setProgressColumns] = useState<ProgressColumn[]>([]);
   const [dateOrderChoice, setDateOrderChoice] =
@@ -137,22 +149,37 @@ export function ImportCsvDialog({
 
   async function loadFile(file: File) {
     setFileError(null);
-    let parsed: string[][];
-    try {
-      parsed = parseCsv(await file.text());
-    } catch {
-      setFileError("This file could not be read.");
+    if (/\.xls$/i.test(file.name)) {
+      setFileError(
+        "Old .xls files aren't supported. Open it in Excel and save as .xlsx or .csv.",
+      );
       return;
     }
 
-    if (parsed.length < 2) {
+    let parsed: SheetData;
+    setReading(true);
+    try {
+      if (isExcelFile(file)) {
+        const { readXlsx } = await import("@/lib/xlsx-import");
+        parsed = await readXlsx(await file.arrayBuffer());
+      } else {
+        parsed = sheetFromCsv(await file.text());
+      }
+    } catch {
+      setFileError("This file could not be read.");
+      return;
+    } finally {
+      setReading(false);
+    }
+
+    if (parsed.rows.length === 0) {
       setFileError(
         "No applications found. The file needs a header row followed by at least one row of data.",
       );
       return;
     }
 
-    const [headerRow, ...dataRows] = parsed;
+    const headerRow = parsed.headers;
     const saved = loadSavedSettings(headerRow);
     let nextMapping = guessMapping(headerRow);
     if (saved) {
@@ -173,8 +200,7 @@ export function ImportCsvDialog({
       : guessProgressColumns(headerRow, nextMapping);
 
     setFileName(file.name);
-    setHeaders(headerRow);
-    setRows(dataRows);
+    setSheet(parsed);
     setMapping(nextMapping);
     setProgressColumns(nextProgressColumns);
     setDateOrderChoice(saved?.dateOrder ?? "auto");
@@ -184,8 +210,7 @@ export function ImportCsvDialog({
 
   function resetFile() {
     setFileName("");
-    setHeaders([]);
-    setRows([]);
+    setSheet(null);
     setMapping(null);
     setFileError(null);
   }
@@ -196,6 +221,21 @@ export function ImportCsvDialog({
     const file = event.dataTransfer.files[0];
     if (file) void loadFile(file);
   }
+
+  const headers = sheet?.headers ?? emptyHeaders;
+  const rows = sheet?.rows ?? emptyRows;
+
+  // Red cells only mean "rejected" inside progress columns.
+  const redCellCounts = useMemo(() => {
+    const progress = new Set(progressColumns.map((item) => item.column));
+    let used = 0;
+    let ignored = 0;
+    for (const key of sheet?.redCells ?? []) {
+      if (progress.has(Number(key.split(":")[1]))) used += 1;
+      else ignored += 1;
+    }
+    return { used, ignored };
+  }, [progressColumns, sheet]);
 
   const detectedDateOrder = useMemo(() => {
     if (!mapping) return { order: "mdy" as DateOrder, ambiguous: false };
@@ -247,10 +287,9 @@ export function ImportCsvDialog({
   }, [mapping, rows, outcomeOverrides]);
 
   const preview = useMemo(() => {
-    if (!mapping) return null;
+    if (!mapping || !sheet) return null;
     return buildImportPreview(
-      headers,
-      rows,
+      sheet,
       {
         mapping,
         progressColumns,
@@ -268,11 +307,10 @@ export function ImportCsvDialog({
     dateOrder,
     existingApplications,
     fallbackDate,
-    headers,
     mapping,
     outcomeValues,
     progressColumns,
-    rows,
+    sheet,
     skipDuplicates,
     stageValues,
     useFallbackDate,
@@ -373,7 +411,7 @@ export function ImportCsvDialog({
             Import applications
           </DialogTitle>
           <DialogDescription>
-            Any CSV with a header row works. You&apos;ll match its columns and
+            Any CSV or Excel (.xlsx) file with a header row works. You&apos;ll match its columns and
             status values to JobTrack fields before anything is saved.
           </DialogDescription>
         </DialogHeader>
@@ -398,14 +436,15 @@ export function ImportCsvDialog({
                 aria-hidden="true"
               />
               <span className="mt-3 text-sm font-medium text-foreground">
-                Choose a CSV file or drop it here
+                {reading ? "Reading file…" : "Choose a CSV or Excel file, or drop it here"}
               </span>
               <span className="mt-1 text-xs text-muted-foreground">
-                Comma, semicolon, and tab separated files are supported
+                Excel files keep hyperlinks, and red cells in progress columns
+                count as rejections
               </span>
               <input
                 type="file"
-                accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values"
+                accept=".csv,.tsv,.txt,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="sr-only"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
@@ -495,8 +534,8 @@ export function ImportCsvDialog({
                     For sheets with one column per round, filled in as you
                     advance. The furthest filled column sets the stage, and the
                     first date found becomes the response date. &ldquo;No&rdquo;
-                    or &ldquo;-&rdquo; count as empty; &ldquo;Rejected&rdquo;
-                    marks the result.
+                    or &ldquo;-&rdquo; count as empty; &ldquo;Rejected&rdquo; or a
+                    red cell (Excel files) marks a rejection.
                   </p>
                 </div>
                 <Button
@@ -515,6 +554,9 @@ export function ImportCsvDialog({
                   {progressColumns.map((progress, index) => {
                     const filled = rows.filter((row) =>
                       isProgressCellFilled(row[progress.column]?.trim() ?? ""),
+                    ).length;
+                    const red = rows.filter((_, row) =>
+                      sheet?.redCells.has(`${row}:${progress.column}`),
                     ).length;
                     return (
                       <div
@@ -541,6 +583,9 @@ export function ImportCsvDialog({
                           </NativeSelect>
                           <p className="mt-1 text-xs text-[#71869b]">
                             Filled in {filled} of {rows.length} rows
+                            {red > 0 && (
+                              <span className="text-[#ff9da4]"> · {red} red</span>
+                            )}
                           </p>
                         </div>
                         <NativeSelect
@@ -579,6 +624,22 @@ export function ImportCsvDialog({
                     );
                   })}
                 </div>
+              )}
+              {(redCellCounts.used > 0 || redCellCounts.ignored > 0) && (
+                <p className="mt-3 flex items-start gap-2 rounded-lg border border-[#ff6b74]/20 bg-[#ff6b74]/[0.06] px-3.5 py-2.5 text-xs leading-5 text-[#ffb3b8]">
+                  <span
+                    className="mt-1 size-2.5 shrink-0 rounded-sm bg-[#ff4d57]"
+                    aria-hidden="true"
+                  />
+                  <span>
+                    {redCellCounts.used} red cell
+                    {redCellCounts.used === 1 ? "" : "s"} in progress columns will be
+                    imported as rejections, dated to the applied date unless the
+                    cell holds a date.
+                    {redCellCounts.ignored > 0 &&
+                      ` ${redCellCounts.ignored} red cell${redCellCounts.ignored === 1 ? "" : "s"} in other columns ${redCellCounts.ignored === 1 ? "is" : "are"} ignored.`}
+                  </span>
+                </p>
               )}
             </section>
 

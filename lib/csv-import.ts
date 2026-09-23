@@ -126,6 +126,23 @@ export type ImportOptions = {
   skipDuplicates: boolean;
 };
 
+/**
+ * A parsed spreadsheet. `redCells` and `links` are keyed by
+ * "rowIndex:columnIndex" (0-based, data rows only) and only exist for Excel
+ * files, since CSV cannot store fills or hyperlinks.
+ */
+export type SheetData = {
+  headers: string[];
+  rows: string[][];
+  redCells: Set<string>;
+  links: Map<string, string>;
+};
+
+export function sheetFromCsv(text: string): SheetData {
+  const [headers = [], ...rows] = parseCsv(text);
+  return { headers, rows, redCells: new Set(), links: new Map() };
+}
+
 export type ImportRow = {
   rowNumber: number;
   draft: ApplicationDraft;
@@ -517,12 +534,30 @@ export function duplicateKey(
     .join("|");
 }
 
+// Excel users often link the job posting from the role or company text
+// instead of keeping a URL column.
+function rowLink(sheet: SheetData, index: number, mapping: ColumnMapping) {
+  const preferred = [mapping.role, mapping.company].filter(
+    (column): column is number => column !== null,
+  );
+  for (const column of preferred) {
+    const link = sheet.links.get(`${index}:${column}`);
+    if (link) return link;
+  }
+  for (let column = 0; column < sheet.headers.length; column += 1) {
+    if (column === mapping.interviewLink) continue;
+    const link = sheet.links.get(`${index}:${column}`);
+    if (link) return link;
+  }
+  return undefined;
+}
+
 export function buildImportPreview(
-  headers: string[],
-  rows: string[][],
+  sheet: SheetData,
   options: ImportOptions,
   existing: Application[],
 ): ImportPreview {
+  const { headers, rows } = sheet;
   const { mapping, dateOrder } = options;
   const mappedColumns = new Set([
     ...Object.values(mapping).filter((column): column is number => column !== null),
@@ -582,8 +617,18 @@ export function buildImportPreview(
     // cell saying "Rejected" or "Withdrew" ends the process there instead.
     let progressAssessment = false;
     let firstProgressDate: string | undefined;
+    let endedInProgress = false;
+    let endingDate: string | undefined;
     for (const progress of options.progressColumns) {
       const value = row[progress.column]?.trim() ?? "";
+      // A red cell in a progress column means the process ended there, even
+      // when the cell is empty.
+      if (sheet.redCells.has(`${index}:${progress.column}`)) {
+        outcome = "Rejected";
+        endedInProgress = true;
+        endingDate ??= parseDateValue(value, dateOrder) ?? undefined;
+        continue;
+      }
       if (!isProgressCellFilled(value)) continue;
 
       const ending = guessOutcome(value);
@@ -592,6 +637,8 @@ export function buildImportPreview(
         (ending.value === "Rejected" || ending.value === "Withdrawn")
       ) {
         outcome = ending.value;
+        endedInProgress = true;
+        endingDate ??= parseDateValue(value, dateOrder) ?? undefined;
         continue;
       }
       if (ending.recognized && ending.value === "Offer") outcome = "Offer";
@@ -649,15 +696,20 @@ export function buildImportPreview(
       responseAt: hasPositiveResponse ? responseAt : undefined,
       source: cell("source") || undefined,
       location: cell("location") || undefined,
-      jobUrl: normalizeUrl(cell("jobUrl")) || undefined,
+      jobUrl: normalizeUrl(cell("jobUrl")) || rowLink(sheet, index, mapping) || undefined,
       notes: notes || undefined,
       interviewAt,
       interviewLink: normalizeUrl(cell("interviewLink")) || undefined,
       interviewDetails: cell("interviewDetails") || undefined,
-      // Same fallback the local-data migration uses, so rejection trends
-      // still place the rejection somewhere sensible.
+      // A rejection marked in a progress column (red cell or "Rejected")
+      // without its own date is dated to the application. A rejection from a
+      // status column keeps the local-data migration's fallback.
       rejectedAt:
-        outcome === "Rejected" ? rejectedAt || responseAt || appliedAt : undefined,
+        outcome !== "Rejected"
+          ? undefined
+          : rejectedAt ||
+            endingDate ||
+            (endedInProgress ? appliedAt : responseAt || appliedAt),
       hadAssessment,
     };
 

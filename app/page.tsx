@@ -2353,7 +2353,7 @@ function Dashboard({
                 onClick={() => setImportDialogOpen(true)}
               >
                 <Upload aria-hidden="true" />
-                Import CSV
+                Import
               </Button>
               <Button
                 type="button"
