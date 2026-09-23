@@ -259,9 +259,14 @@ export function ImportCsvDialog({
     useFallbackDate,
   ]);
 
+  // Spreadsheets often export dozens of blank placeholder columns
+  // ("Column 1", "Column 2", …); only count columns that hold data.
   const unmappedColumnCount = mapping
-    ? headers.length -
-      new Set(Object.values(mapping).filter((column) => column !== null)).size
+    ? headers.filter(
+        (_, column) =>
+          !Object.values(mapping).includes(column) &&
+          rows.some((row) => row[column]),
+      ).length
     : 0;
   const missingRequired = mapping
     ? importFields.filter(

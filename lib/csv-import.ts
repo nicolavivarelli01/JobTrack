@@ -35,7 +35,7 @@ export const importFields = [
     key: "appliedAt",
     label: "Applied date",
     required: true,
-    aliases: ["Applied date", "Date applied", "Applied", "Applied on", "Application date", "Date", "Submitted", "Submitted on"],
+    aliases: ["Applied date", "Date applied", "Apply date", "Applied", "Applied on", "Application date", "Date of application", "Date", "Submitted", "Submitted on"],
   },
   {
     key: "stage",
