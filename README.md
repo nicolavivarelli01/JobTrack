@@ -98,3 +98,7 @@ Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to the
 ## Installing on iPhone
 
 Open the site in Safari, tap **Share → Add to Home Screen**, keep **Open as Web App** on, and tap **Add**.
+
+## License
+
+Copyright © 2026 Nicola Vivarelli. All rights reserved. The code is public for viewing only; it may not be copied, modified, or used without written permission. See [LICENSE](LICENSE).
