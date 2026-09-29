@@ -1,67 +1,84 @@
 # JobTrack
 
-A personal job-search dashboard for tracking applications, positive employer responses, interviews, offers, and rejections.
+A job-search tracker that shows where your applications stand and how the search is going: response rates, interviews, offers, and rejections over time.
+
+Built with Next.js, React, TypeScript, Tailwind CSS, and Supabase. Installable as a PWA on iPhone and Android.
 
 ## Features
 
-- Separate positive-response, rejection, interview, and offer metrics
-- Application, positive-response, and rejection trends for this month, 3 months, or 6 months
-- Dedicated rejection dates for accurate rejection trends
-- Detailed pipeline stages through Interview 1, 2, 3, and 4+
-- Assessment participation tracked independently from the highest stage reached
-- Branching flow for rejections, optional assessments, direct interviews, and offers
-- Current-outcome breakdown
-- Searchable and filterable application table
-- Pin any number of applications to keep them at the top of the list
-- Optional free-text company status for portal-specific labels
-- CSV export of the currently filtered applications with selectable columns
-- CSV and Excel (.xlsx) import from any spreadsheet: columns are auto-matched by name and adjustable, status values (e.g. "Ghosted", "2nd round") are mapped to stages and results, spreadsheets that track rounds as one column per phase ("1st contact", "Phase 1", …) set the stage from the furthest filled column, day/month date order is detected, Excel hyperlinks become job-posting links, red cells in progress columns mark rejections (dated to the applied date when the cell has no date), duplicates are skipped, and the mapping is remembered for the next file with the same columns
-- Add, edit, and delete workflows
-- Private notes for recruiter details, next steps, and reminders
-- Optional interview date, time, meeting link, and preparation details
-- Company favicons loaded from saved job-posting domains with initials as a fallback
-- Email/password authentication
-- Email-based password recovery
-- Supabase Postgres persistence across devices
-- Row-level security so each account can access only its own applications
-- One-time import of existing non-demo browser data
-- Installable iPhone and Android PWA with branded Home Screen icons
-- Standalone, notch-safe mobile layout
-- Touch-friendly mobile application cards and a responsive dark interface
+**Tracking**
 
-## Install on iPhone
+- Pipeline stages from Applied through Interview 1–4+ and Offer, with the current result (active, rejected, offer, withdrawn) tracked separately
+- Assessments recorded independently of the highest stage reached
+- Interview date, meeting link, and prep notes; free-text notes and the company's own status label
+- Pin applications to keep them at the top
 
-1. Open the deployed JobTrack URL in Safari.
-2. Tap the **Share** button.
-3. Tap **Add to Home Screen** and keep **Open as Web App** enabled.
-4. Tap **Add**. JobTrack will open from its own Home Screen icon without Safari chrome.
+**Dashboard**
 
-## Run locally
+- Positive-response, rejection, interview, and offer rates
+- Daily or weekly trends for this month, 3 months, or 6 months
+- A flow diagram of how applications move through assessments and interviews
+
+**Import and export**
+
+- Import from any CSV or Excel file. Columns are matched by name and can be adjusted, free-text statuses such as "Ghosted" or "2nd round" are mapped to stages, and the mapping is remembered for the next file with the same columns.
+- Spreadsheets that track rounds as one column per phase are supported: the furthest filled column sets the stage.
+- From Excel files, hyperlinks become job-posting links and red cells in progress columns mark rejections.
+- Export the filtered list to CSV with the columns you choose.
+
+**Accounts**
+
+- Email and password sign-in with password recovery
+- Data stored in Postgres; row-level security limits every account to its own applications
+
+## Project structure
+
+```text
+app/                  Next.js entry point (auth routing only)
+components/
+  dashboard/          Header, metric cards, charts, flow diagram
+  applications/       List, table, dialogs for adding, editing, and exporting
+  import/             Import dialog and its sections
+  ui/                 shadcn/ui primitives
+hooks/                useApplications (data + optimistic updates), useImportWizard
+lib/
+  applications.ts     Domain types and database row mapping
+  applications-api.ts Supabase queries
+  metrics.ts          Dashboard metrics, trends, and list filtering
+  import/             CSV/Excel parsing, column and status guessing, import preview
+supabase/migrations/  Database schema and row-level-security policies
+```
+
+## Development
 
 ```bash
 npm install
-cp .env.example .env.local
+cp .env.example .env.local   # then add your Supabase URL and publishable key
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+| Script              | What it does                  |
+| ------------------- | ----------------------------- |
+| `npm run dev`       | Start the dev server on :3000 |
+| `npm test`          | Run the unit tests (Vitest)   |
+| `npm run lint`      | ESLint                        |
+| `npm run typecheck` | TypeScript without emitting   |
+| `npm run format`    | Format with Prettier          |
+| `npm run build`     | Production build              |
 
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Open **SQL Editor** and run the files in `supabase/migrations` in filename order. If your database already exists, run only the newer files you have not applied yet.
-3. Copy `.env.example` to `.env.local` and fill in the project URL and publishable key from **Connect → API Keys**.
-4. In **Authentication → URL Configuration**, set the Site URL to the deployed app URL and add the same URL to Redirect URLs.
+2. In the **SQL Editor**, run the files in `supabase/migrations` in filename order. For an existing database, run only the ones you haven't applied.
+3. Copy the project URL and publishable key from **Connect → API Keys** into `.env.local`.
+4. Under **Authentication → URL Configuration**, set the Site URL to your deployed URL and add it to the Redirect URLs.
 
-Only the publishable browser key belongs in these variables. Never expose or commit a `service_role` or secret key.
+Only the publishable key belongs in these variables. Never commit a `service_role` or secret key.
 
-## Deploy to Vercel
+## Deploying to Vercel
 
-Add these variables to the Vercel project for Production, Preview, and Development, then redeploy:
+Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to the project for all environments, then redeploy. The browser talks to Supabase directly with the signed-in session, and the row-level-security policies enforce ownership of every read and write.
 
-```text
-NEXT_PUBLIC_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-```
+## Installing on iPhone
 
-The browser talks directly to Supabase using the signed-in session. PostgreSQL row-level-security policies enforce ownership for reads, inserts, updates, and deletes.
+Open the site in Safari, tap **Share → Add to Home Screen**, keep **Open as Web App** on, and tap **Add**.

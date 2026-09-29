@@ -30,7 +30,9 @@ function AuthShell({ children }: { children: React.ReactNode }) {
             <p className="text-lg font-semibold tracking-[-0.025em]">
               JobTrack by Nick Vivarelli
             </p>
-            <p className="text-xs text-muted-foreground">Your search, synchronized</p>
+            <p className="text-xs text-muted-foreground">
+              Your search, synchronized
+            </p>
           </div>
         </div>
         {children}
@@ -43,7 +45,10 @@ export function LoadingScreen() {
   return (
     <AuthShell>
       <div className="flex items-center justify-center gap-3 py-16 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
+        <Loader2
+          className="size-4 animate-spin text-primary"
+          aria-hidden="true"
+        />
         Loading your workspace…
       </div>
     </AuthShell>
@@ -62,7 +67,8 @@ export function SetupScreen() {
             Connect the database
           </h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            Add the two Supabase variables to this Vercel project, then redeploy.
+            Add the two Supabase variables to this Vercel project, then
+            redeploy.
           </p>
           <div className="mt-5 space-y-2 rounded-lg border border-white/[0.07] bg-black/15 p-4 font-mono text-xs text-[#b8c8d5]">
             <p>NEXT_PUBLIC_SUPABASE_URL</p>
@@ -90,10 +96,12 @@ export function AuthScreen({ supabase }: { supabase: SupabaseClient }) {
 
     try {
       if (mode === "forgot-password") {
-        const { error: resetError } =
-          await supabase.auth.resetPasswordForEmail(email, {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+          email,
+          {
             redirectTo: window.location.origin,
-          });
+          },
+        );
         if (resetError) throw resetError;
         setNotice(
           "If an account exists for this email, a reset link is on its way.",
@@ -112,7 +120,9 @@ export function AuthScreen({ supabase }: { supabase: SupabaseClient }) {
         });
         if (signUpError) throw signUpError;
         if (!data.session) {
-          setNotice("Check your email to confirm the account, then come back and sign in.");
+          setNotice(
+            "Check your email to confirm the account, then come back and sign in.",
+          );
         }
       }
     } catch (caughtError) {

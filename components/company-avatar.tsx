@@ -56,9 +56,16 @@ function companyDomainStems(company: string) {
     .filter(
       (word, index, allWords) =>
         index < allWords.length - 1 ||
-        !["inc", "llc", "corp", "corporation", "company", "co", "plc", "ltd"].includes(
-          word,
-        ),
+        ![
+          "inc",
+          "llc",
+          "corp",
+          "corporation",
+          "company",
+          "co",
+          "plc",
+          "ltd",
+        ].includes(word),
     );
 
   if (!words.length) return [];
