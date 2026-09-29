@@ -1,8 +1,24 @@
 # JobTrack
 
+[![CI](https://github.com/nicolavivarelli01/JobTrack/actions/workflows/ci.yml/badge.svg)](https://github.com/nicolavivarelli01/JobTrack/actions/workflows/ci.yml)
+
 A job-search tracker that shows where your applications stand and how the search is going: response rates, interviews, offers, and rejections over time.
 
 Built with Next.js, React, TypeScript, Tailwind CSS, and Supabase. Installable as a PWA on iPhone and Android.
+
+![JobTrack dashboard with response-rate metrics, a daily activity chart, and an outcomes breakdown](docs/screenshots/dashboard.png)
+
+<table>
+  <tr>
+    <td width="62%"><img src="docs/screenshots/applications.png" alt="Applications table with stages, results, interview times, and notes"></td>
+    <td width="38%" rowspan="2"><img src="docs/screenshots/mobile.png" alt="Mobile layout with application cards"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/import.png" alt="Import dialog mapping spreadsheet status values to stages and results"></td>
+  </tr>
+</table>
+
+<sub>Screenshots use sample data.</sub>
 
 ## Features
 
