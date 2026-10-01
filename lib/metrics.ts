@@ -11,13 +11,56 @@ import {
 } from "@/lib/dates";
 
 export const momentumRanges = [
-  { value: "month", label: "This month" },
-  { value: "lastMonth", label: "Last month" },
+  { value: "month", label: "Month" },
   { value: "3mo", label: "3mo" },
   { value: "6mo", label: "6mo" },
 ] as const;
 
 export type MomentumRange = (typeof momentumRanges)[number]["value"];
+
+/** A calendar month; `month` is 0-based like `Date#getMonth`. */
+export type CalendarMonth = { year: number; month: number };
+
+export function currentMonth(): CalendarMonth {
+  const today = new Date();
+  return { year: today.getFullYear(), month: today.getMonth() };
+}
+
+export function monthKey({ year, month }: CalendarMonth) {
+  return `${year}-${String(month + 1).padStart(2, "0")}`;
+}
+
+export function formatMonth({ year, month }: CalendarMonth) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(year, month, 1));
+}
+
+/**
+ * Months that can be charted, newest first: from the month of the earliest
+ * application up to the current month. Always includes the current month.
+ */
+export function monthOptions(applications: Application[]): CalendarMonth[] {
+  const now = currentMonth();
+  const earliest = applications.reduce<CalendarMonth>((first, application) => {
+    const date = parseLocalDate(application.appliedAt);
+    const month = { year: date.getFullYear(), month: date.getMonth() };
+    return monthKey(month) < monthKey(first) ? month : first;
+  }, now);
+
+  const options: CalendarMonth[] = [];
+  let { year, month } = now;
+  while (monthKey({ year, month }) >= monthKey(earliest)) {
+    options.push({ year, month });
+    month -= 1;
+    if (month < 0) {
+      month = 11;
+      year -= 1;
+    }
+  }
+  return options;
+}
 
 export type ApplicationMetrics = ReturnType<typeof computeMetrics>;
 
@@ -69,23 +112,24 @@ export function computeMetrics(applications: Application[]) {
 
 /**
  * The days a range covers, as [start, end), and how many days each chart
- * point groups. The calendar months use daily points; the longer ranges end
- * today and use weekly points.
+ * point groups. A month uses daily points; the longer ranges end today and
+ * use weekly points.
  */
-function momentumWindow(range: MomentumRange) {
+function momentumWindow(range: MomentumRange, selected: CalendarMonth) {
   const today = startOfLocalDay(new Date());
   const tomorrow = addDays(today, 1);
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
   switch (range) {
-    case "month":
-      return { start: firstOfMonth, end: tomorrow, bucketSize: 1 };
-    case "lastMonth":
+    case "month": {
+      const start = new Date(selected.year, selected.month, 1);
+      const nextMonth = new Date(selected.year, selected.month + 1, 1);
+      // The current month stops at today rather than showing empty days.
       return {
-        start: new Date(today.getFullYear(), today.getMonth() - 1, 1),
-        end: firstOfMonth,
+        start,
+        end: nextMonth < tomorrow ? nextMonth : tomorrow,
         bucketSize: 1,
       };
+    }
     case "3mo":
       return { start: subtractMonths(today, 3), end: tomorrow, bucketSize: 7 };
     case "6mo":
@@ -94,14 +138,19 @@ function momentumWindow(range: MomentumRange) {
 }
 
 /**
- * Applications, positive responses, and rejections per day (this month and
- * last month) or per week (3 and 6 months).
+ * Applications, positive responses, and rejections per day (one month) or
+ * per week (3 and 6 months).
  */
 export function buildMomentumSeries(
   applications: Application[],
   range: MomentumRange,
+  selectedMonth: CalendarMonth = currentMonth(),
 ) {
-  const { start, end: rangeEnd, bucketSize } = momentumWindow(range);
+  const {
+    start,
+    end: rangeEnd,
+    bucketSize,
+  } = momentumWindow(range, selectedMonth);
   const buckets = [];
 
   for (

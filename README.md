@@ -32,7 +32,7 @@ Built with Next.js, React, TypeScript, Tailwind CSS, and Supabase. Installable a
 **Dashboard**
 
 - Positive-response, rejection, interview, and offer rates
-- Daily or weekly trends for this month, 3 months, or 6 months
+- Daily trends for any month, or weekly trends over the last 3 or 6 months
 - A flow diagram of how applications move through assessments and interviews
 
 **Import and export**
