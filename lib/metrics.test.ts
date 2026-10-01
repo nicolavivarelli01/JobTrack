@@ -126,6 +126,37 @@ describe("buildMomentumSeries", () => {
     expect(series[9].rejections).toBe(1);
   });
 
+  it("shows every day of the previous month", () => {
+    const series = buildMomentumSeries(
+      [
+        application({ appliedAt: "2026-08-31" }),
+        application({ appliedAt: "2026-09-01" }),
+        application({ appliedAt: "2026-09-30" }),
+        application({ appliedAt: "2026-09-29" }),
+      ],
+      "lastMonth",
+    );
+
+    // Today is Sep 29, so last month is August.
+    expect(series).toHaveLength(31);
+    expect(series[0].label).toBe("Aug 1");
+    expect(series[30]).toMatchObject({ label: "Aug 31", applications: 1 });
+    expect(series.reduce((sum, day) => sum + day.applications, 0)).toBe(1);
+  });
+
+  it("wraps last month back to December in January", () => {
+    vi.setSystemTime(new Date(2027, 0, 15, 12));
+    const series = buildMomentumSeries([], "lastMonth");
+    expect(series).toHaveLength(31);
+    expect(series[0].label).toBe("Dec 1");
+    expect(series[30].label).toBe("Dec 31");
+  });
+
+  it("handles a short previous month", () => {
+    vi.setSystemTime(new Date(2027, 2, 3, 12));
+    expect(buildMomentumSeries([], "lastMonth")).toHaveLength(28);
+  });
+
   it("buckets longer ranges by week", () => {
     expect(buildMomentumSeries([], "3mo").length).toBeLessThan(15);
   });

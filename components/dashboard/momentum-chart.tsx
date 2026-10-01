@@ -41,6 +41,8 @@ const activityConfig = {
 
 const momentumDescriptions: Record<MomentumRange, string> = {
   month: "Daily applications, positive responses, and rejections this month",
+  lastMonth:
+    "Daily applications, positive responses, and rejections last month",
   "3mo":
     "Weekly applications, positive responses, and rejections over 3 months",
   "6mo":
@@ -70,7 +72,7 @@ export function MomentumChart({
           </CardDescription>
         </div>
         <div
-          className="flex w-fit items-center gap-1 rounded-lg border border-white/[0.08] bg-[#07131e] p-1"
+          className="grid w-full grid-cols-2 gap-1 rounded-lg border border-white/[0.08] bg-[#07131e] p-1 sm:flex sm:w-fit sm:items-center"
           role="group"
           aria-label="Search momentum date range"
         >

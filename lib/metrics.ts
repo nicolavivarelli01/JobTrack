@@ -12,6 +12,7 @@ import {
 
 export const momentumRanges = [
   { value: "month", label: "This month" },
+  { value: "lastMonth", label: "Last month" },
   { value: "3mo", label: "3mo" },
   { value: "6mo", label: "6mo" },
 ] as const;
@@ -67,29 +68,49 @@ export function computeMetrics(applications: Application[]) {
 }
 
 /**
- * Applications, positive responses, and rejections per day (this month) or
- * per week (3 and 6 months), ending today.
+ * The days a range covers, as [start, end), and how many days each chart
+ * point groups. The calendar months use daily points; the longer ranges end
+ * today and use weekly points.
+ */
+function momentumWindow(range: MomentumRange) {
+  const today = startOfLocalDay(new Date());
+  const tomorrow = addDays(today, 1);
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  switch (range) {
+    case "month":
+      return { start: firstOfMonth, end: tomorrow, bucketSize: 1 };
+    case "lastMonth":
+      return {
+        start: new Date(today.getFullYear(), today.getMonth() - 1, 1),
+        end: firstOfMonth,
+        bucketSize: 1,
+      };
+    case "3mo":
+      return { start: subtractMonths(today, 3), end: tomorrow, bucketSize: 7 };
+    case "6mo":
+      return { start: subtractMonths(today, 6), end: tomorrow, bucketSize: 7 };
+  }
+}
+
+/**
+ * Applications, positive responses, and rejections per day (this month and
+ * last month) or per week (3 and 6 months).
  */
 export function buildMomentumSeries(
   applications: Application[],
   range: MomentumRange,
 ) {
-  const today = startOfLocalDay(new Date());
-  const tomorrow = addDays(today, 1);
-  const start =
-    range === "month"
-      ? new Date(today.getFullYear(), today.getMonth(), 1)
-      : subtractMonths(today, range === "3mo" ? 3 : 6);
-  const bucketSize = range === "month" ? 1 : 7;
+  const { start, end: rangeEnd, bucketSize } = momentumWindow(range);
   const buckets = [];
 
   for (
     let cursor = start;
-    cursor < tomorrow;
+    cursor < rangeEnd;
     cursor = addDays(cursor, bucketSize)
   ) {
     const next = addDays(cursor, bucketSize);
-    const end = next < tomorrow ? next : tomorrow;
+    const end = next < rangeEnd ? next : rangeEnd;
     const labelDate = addDays(end, -1);
 
     const isInBucket = (value?: string) => {
