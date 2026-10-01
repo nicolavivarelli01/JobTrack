@@ -19,8 +19,17 @@ import {
 } from "@/components/ui/chart";
 import type { Application } from "@/lib/applications";
 import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import {
   buildMomentumSeries,
+  currentMonth,
+  formatMonth,
+  monthKey,
+  monthOptions,
   momentumRanges,
+  type CalendarMonth,
   type MomentumRange,
 } from "@/lib/metrics";
 
@@ -39,15 +48,16 @@ const activityConfig = {
   },
 } satisfies ChartConfig;
 
-const momentumDescriptions: Record<MomentumRange, string> = {
-  month: "Daily applications, positive responses, and rejections this month",
-  lastMonth:
-    "Daily applications, positive responses, and rejections last month",
-  "3mo":
-    "Weekly applications, positive responses, and rejections over 3 months",
-  "6mo":
-    "Weekly applications, positive responses, and rejections over 6 months",
-};
+function describeRange(range: MomentumRange, month: CalendarMonth) {
+  switch (range) {
+    case "month":
+      return `Daily applications, positive responses, and rejections in ${formatMonth(month)}`;
+    case "3mo":
+      return "Weekly applications, positive responses, and rejections over 3 months";
+    case "6mo":
+      return "Weekly applications, positive responses, and rejections over 6 months";
+  }
+}
 
 export function MomentumChart({
   applications,
@@ -55,9 +65,11 @@ export function MomentumChart({
   applications: Application[];
 }) {
   const [momentumRange, setMomentumRange] = useState<MomentumRange>("month");
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const months = useMemo(() => monthOptions(applications), [applications]);
   const momentumSeries = useMemo(
-    () => buildMomentumSeries(applications, momentumRange),
-    [applications, momentumRange],
+    () => buildMomentumSeries(applications, momentumRange, selectedMonth),
+    [applications, momentumRange, selectedMonth],
   );
 
   return (
@@ -68,35 +80,57 @@ export function MomentumChart({
             Search momentum
           </CardTitle>
           <CardDescription className="mt-1.5">
-            {momentumDescriptions[momentumRange]}
+            {describeRange(momentumRange, selectedMonth)}
           </CardDescription>
         </div>
-        <div
-          className="grid w-full grid-cols-2 gap-1 rounded-lg border border-white/[0.08] bg-[#07131e] p-1 sm:flex sm:w-fit sm:items-center"
-          role="group"
-          aria-label="Search momentum date range"
-        >
-          {momentumRanges.map((option) => {
-            const isSelected = momentumRange === option.value;
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <div
+            className="flex w-fit items-center gap-1 rounded-lg border border-white/[0.08] bg-[#07131e] p-1"
+            role="group"
+            aria-label="Search momentum date range"
+          >
+            {momentumRanges.map((option) => {
+              const isSelected = momentumRange === option.value;
 
-            return (
-              <Button
-                key={option.value}
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-pressed={isSelected}
-                onClick={() => setMomentumRange(option.value)}
-                className={
-                  isSelected
-                    ? "bg-primary/15 text-primary shadow-sm hover:bg-primary/20 hover:text-primary"
-                    : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
-                }
-              >
-                {option.label}
-              </Button>
-            );
-          })}
+              return (
+                <Button
+                  key={option.value}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={isSelected}
+                  onClick={() => setMomentumRange(option.value)}
+                  className={
+                    isSelected
+                      ? "bg-primary/15 text-primary shadow-sm hover:bg-primary/20 hover:text-primary"
+                      : "text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
+                  }
+                >
+                  {option.label}
+                </Button>
+              );
+            })}
+          </div>
+          {momentumRange === "month" && (
+            <NativeSelect
+              size="sm"
+              aria-label="Month to show"
+              value={monthKey(selectedMonth)}
+              onChange={(event) => {
+                const [year, month] = event.target.value.split("-").map(Number);
+                setSelectedMonth({ year, month: month - 1 });
+              }}
+            >
+              {months.map((month) => (
+                <NativeSelectOption
+                  key={monthKey(month)}
+                  value={monthKey(month)}
+                >
+                  {formatMonth(month)}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          )}
         </div>
       </CardHeader>
       <CardContent className="px-2 pb-4 pt-5 sm:px-5">
